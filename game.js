@@ -1,33 +1,22 @@
-class BootScene extends Phaser.Scene {
-    constructor() {
-        super('BootScene');
-    }
-
-    create() {
-        this.add.text(
-            this.cameras.main.width / 2,
-            this.cameras.main.height / 2,
-            '🎮 游戏加载成功！\n（这里将是你类银河恶魔城的起点）',
-            { fontSize: '32px', fill: '#fff', align: 'center' }
-        ).setOrigin(0.5);
-
-        console.log('游戏引擎已启动！');
-    }
-}
-
 const config = {
     type: Phaser.AUTO,
     width: 800,
     height: 600,
     parent: 'game-container',
-    scene: [BootScene],
+    scene: [BootScene, MenuScene, GameScene, BossScene],
     physics: {
         default: 'arcade',
         arcade: {
-            gravity: { y: 300 },
-            debug: false
-        }
-    }
+            gravity: { y: 500 },
+            debug: false,
+        },
+    },
+    pixelArt: true,
+    backgroundColor: '#0a0a1a',
+    scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+    },
 };
 
-const game = new Phaser.Game(config);
+window.sekaiGame = new Phaser.Game(config);
