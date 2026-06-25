@@ -212,6 +212,19 @@ class MenuScene extends Phaser.Scene {
                 delay: i * 200,
             });
 
+            // Make "NEW GAME" (index 0) pulse subtly after stagger-in
+            if (i === 0 && !def.disabled) {
+                this.tweens.add({
+                    targets: text,
+                    alpha: 0.85,
+                    duration: 900,
+                    yoyo: true,
+                    repeat: -1,
+                    ease: 'Sine.easeInOut',
+                    delay: 1000 + i * 200, // Wait for stagger-in
+                });
+            }
+
             this.items.push({
                 text: text,
                 action: def.action,
@@ -274,6 +287,13 @@ class MenuScene extends Phaser.Scene {
             repeat: -1,
             ease: 'Sine.easeInOut',
         });
+
+        // Version number
+        this.add.text(790, 586, 'v0.5.0', {
+            fontSize: '10px',
+            fontFamily: 'monospace',
+            color: '#3a4a7a',
+        }).setOrigin(1, 1).setDepth(10).setAlpha(0.7);
     }
 
     /* ------------------------------------------------------------------ */

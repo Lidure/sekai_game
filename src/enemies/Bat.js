@@ -26,8 +26,8 @@ class Bat extends Enemy {
             noGravity: true,
         });
 
-        // Source is 320×320 high-res pixel art; scale to ~24×24 display
-        this.sprite.setScale(0.075);
+        // Source is 320×320 high-res pixel art; scale to ~32×32 display for better visibility in dark areas
+        this.sprite.setScale(0.1);
 
         this.originX = x;
         this.originY = y;

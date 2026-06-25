@@ -19,6 +19,7 @@ class GameScene extends Phaser.Scene {
         this.physics.world.setBounds(0, 0, this.WORLD_W, this.WORLD_H);
 
         this._createBackground();
+        this._createDecorations();
         this._createPlatforms();
         this._createPlayer();
         this._createOneWayDoors();
@@ -137,6 +138,51 @@ class GameScene extends Phaser.Scene {
     _createBackground() {
         this.bgTiles = this.add.tileSprite(0, 0, this.WORLD_W, this.WORLD_H, 'bg_tile')
             .setOrigin(0, 0).setDepth(-10);
+
+        // Section tint overlays — subtle colored rectangles behind platforms
+        this.bgOverlays = [];
+        const sections = [
+            { x: 0,    w: 600,  color: 0x0a0a1a, h: this.WORLD_H, y: 0 },    // Intro — standard
+            { x: 600,  w: 500,  color: 0x0e0a20, h: this.WORLD_H, y: 0 },    // Ascent — slightly purple
+            { x: 1100, w: 700,  color: 0x1a0a1a, h: 300,          y: 300 },  // Lower — bottom half only
+            { x: 1024, w: 576,  color: 0x0a1018, h: 200,          y: 100 },  // Secret — top area only
+            { x: 1800, w: 1000, color: 0x100a22, h: this.WORLD_H, y: 0 },    // Mid — more purple
+            { x: 2800, w: 1000, color: 0x1a0a0a, h: this.WORLD_H, y: 0 },    // Pre-boss — red tint
+            { x: 3800, w: 600,  color: 0x0a0018, h: this.WORLD_H, y: 0 },    // Boss area — deep dark
+        ];
+
+        sections.forEach(s => {
+            const fill = this.add.graphics().setDepth(-9);
+            fill.fillStyle(s.color, 0.3);
+            fill.fillRect(s.x, s.y, s.w, s.h);
+            this.bgOverlays.push(fill);
+        });
+    }
+
+    _createDecorations() {
+        // Small ambient light orbs in the secret alcove
+        this._createAmbientLights(1250, 150, 3, 0x7FE0DE, 0.3);
+        // Dim red glow near boss area
+        this._createAmbientLights(3900, 500, 4, 0xff4444, 0.15);
+    }
+
+    _createAmbientLights(x, y, count, color, alpha) {
+        for (let i = 0; i < count; i++) {
+            const lx = x + i * 60 + Phaser.Math.Between(-10, 10);
+            const ly = y + Phaser.Math.Between(-20, 20);
+            const orb = this.add.circle(lx, ly, Phaser.Math.Between(3, 6), color, alpha);
+            orb.setDepth(-5);
+            this.tweens.add({
+                targets: orb,
+                alpha: { from: alpha * 0.3, to: alpha },
+                scale: { from: 0.5, to: 1.2 },
+                duration: 2000 + Phaser.Math.Between(0, 1000),
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut',
+                delay: i * 400,
+            });
+        }
     }
 
     _createPlatforms() {
@@ -205,6 +251,23 @@ class GameScene extends Phaser.Scene {
         ];
 
         platPositions.forEach(p => this._createPlatformRun(p.x, p.y, p.w));
+
+        // Section dividers: visual pillars at transition points
+        const dividerPillars = [
+            { x: 598, h: 80 },   // Intro → Ascent
+            { x: 1098, h: 60 },  // Ascent → Next
+            { x: 1798, h: 100 }, // → Mid Corridor
+            { x: 2798, h: 80 },  // → Pre-Boss
+            { x: 3798, h: 120 }, // → Boss Area
+        ];
+
+        dividerPillars.forEach(p => {
+            const pillar = this.add.graphics().setDepth(-5);
+            pillar.fillStyle(0x2d3561, 0.15);
+            pillar.fillRect(p.x, 568 - p.h, 4, p.h);
+            pillar.lineStyle(1, 0x2EC4B6, 0.08);
+            pillar.strokeRect(p.x, 568 - p.h, 4, p.h);
+        });
 
         this.platforms.refresh();
     }
@@ -382,6 +445,7 @@ class GameScene extends Phaser.Scene {
         const dir = this.player.facingRight ? 1 : -1;
         enemy.takeDamage(dmg, kbx * dir, kby);
         this.player.onHitEnemy();
+        this.hud.showCombo(this.player.comboCount);
 
         // Audio — combo resonance chime
         if (this.player.comboCount >= 2) {
@@ -391,6 +455,7 @@ class GameScene extends Phaser.Scene {
         // Screen shake (reduced vs boss) + particles
         this.cameras.main.shake(hitStop * 0.6 / 1000, shake / 100);
         this._spawnHitParticles(enemy.x, enemy.y - 10);
+        this._showDamageNumber(enemy.x, enemy.y - 20, dmg);
 
         // Kill bonus Feelings + tracking
         if (enemy.dead && enemy.feelingsDrop > 0) {
@@ -492,6 +557,7 @@ class GameScene extends Phaser.Scene {
             this.input.keyboard.off('keydown-J', this._attackHandlerJ);
             this.input.keyboard.off('keydown-Z', this._attackHandlerZ);
             if (this.npcs) this.npcs.forEach(n => n.destroy());
+            if (this.bgOverlays) this.bgOverlays.forEach(g => g.destroy());
         });
     }
 
@@ -513,7 +579,7 @@ class GameScene extends Phaser.Scene {
     _createAbilityItems() {
         const itemDefs = [
             {
-                x: 2000, y: 480,
+                x: 2000, y: 428,
                 key: 'dash',
                 name: 'DASH',
             },
@@ -523,7 +589,7 @@ class GameScene extends Phaser.Scene {
                 name: 'DOUBLE JUMP',
             },
             {
-                x: 2500, y: 400,
+                x: 2500, y: 352,
                 key: 'sword',
                 name: 'SWORD OF TRUTH',
             },
@@ -579,7 +645,7 @@ class GameScene extends Phaser.Scene {
 
         // ---- NPC dialogue (freezes gameplay while talking) ----
         if (this.isTalking && this.talkingNPC) {
-            if (Phaser.Input.Keyboard.JustDown(this.keys.attack)) {
+            if (Phaser.Input.Keyboard.JustDown(this.keys.attack) || Phaser.Input.Keyboard.JustDown(this.keys.attack2)) {
                 const closed = this.talkingNPC.advanceDialogue();
                 if (closed) {
                     this.isTalking = false;
@@ -597,7 +663,7 @@ class GameScene extends Phaser.Scene {
             const nearbyBench = this._getNearbyBench();
             if (nearbyBench) {
                 nearbyBench.showPrompt(true);
-                if (Phaser.Input.Keyboard.JustDown(this.keys.attack)) {
+                if (Phaser.Input.Keyboard.JustDown(this.keys.attack) || Phaser.Input.Keyboard.JustDown(this.keys.attack2)) {
                     this._restAtBench(nearbyBench);
                 }
             } else {
@@ -646,6 +712,7 @@ class GameScene extends Phaser.Scene {
 
         this.hud.drawPips(this.player.hp, this.player.maxHp);
         this.hud.drawFeelings(this.player.feelings, this.player.feelingsMax);
+        this.hud.drawAbilities(this.player.abilities);
         this._updateBackground();
     }
 
@@ -919,6 +986,9 @@ class GameScene extends Phaser.Scene {
             { type: 'health', saveId: 'health_4', x: 2500, y: 500, value: 30, persistent: false },
             { type: 'health', saveId: 'health_5', x: 3100, y: 500, value: 30, persistent: false },
             { type: 'health', saveId: 'health_6', x: 3600, y: 360, value: 30, persistent: false },
+            // Additional health orbs in mid-section
+            { type: 'health', saveId: 'health_7', x: 2100, y: 330, value: 30, persistent: false },
+            { type: 'health', saveId: 'health_8', x: 2700, y: 300, value: 30, persistent: false },
         ];
 
         // Filter out already-collected persistent items
@@ -999,5 +1069,27 @@ class GameScene extends Phaser.Scene {
         }
     }
 
+    /* ================================================================== */
+    /*  Damage Numbers                                                      */
+    /* ================================================================== */
+
+    _showDamageNumber(x, y, amount) {
+        const txt = this.add.text(x + Phaser.Math.Between(-8, 8), y, `${amount}`, {
+            fontSize: '11px',
+            fontFamily: 'monospace',
+            color: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 2,
+        }).setOrigin(0.5).setDepth(100);
+
+        this.tweens.add({
+            targets: txt,
+            y: txt.y - 30,
+            alpha: 0,
+            duration: 600,
+            ease: 'Power2',
+            onComplete: () => txt.destroy(),
+        });
+    }
 
 }

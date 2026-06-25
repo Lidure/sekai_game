@@ -246,16 +246,16 @@ class Player {
         const airborne = contact.airborne;
         const rawGrounded = contact.rawGrounded;
 
-        const SPEED = 180;
-        const JUMP_VEL = -400;
-        const ACCEL = 600;
-        const DRAG = 700;
-        const MAX_SPEED = 180;
+        const SPEED = 200;
+        const JUMP_VEL = -420;
+        const ACCEL = 800;
+        const DRAG = 900;
+        const MAX_SPEED = 200;
 
         // Dash activation — only from move/air states
         const dashPressed = (
-            (this.scene.keys.dash1 && Phaser.Input.Keyboard.JustDown(this.scene.keys.dash1)) ||
-            (this.scene.keys.dash2 && Phaser.Input.Keyboard.JustDown(this.scene.keys.dash2))
+            (keys.dash1 && Phaser.Input.Keyboard.JustDown(keys.dash1)) ||
+            (keys.dash2 && Phaser.Input.Keyboard.JustDown(keys.dash2))
         );
         if (dashPressed && this.canDash &&
             (this.state === 'idle' || this.state === 'run' || this.state === 'jump' || this.state === 'fall')) {
@@ -302,6 +302,14 @@ class Player {
                     this._enterState(this.isGroundedStable ? 'idle' : 'fall');
                 }
                 break;
+        }
+
+        // Variable jump height — release key to cut upward velocity
+        if (this.body.velocity.y < 0) {
+            const jumpHeld = keys.jump1.isDown || keys.jump2.isDown;
+            if (!jumpHeld) {
+                this.body.velocity.y = Math.max(this.body.velocity.y, -200);
+            }
         }
 
         if (this.state !== 'idle' && this.state !== 'run' && this.state !== 'jump' && this.state !== 'fall' && this.state !== 'dashing') {
@@ -403,7 +411,7 @@ class Player {
         // Input always works �?never blocked by onGround flicker
         if (left) { this.body.setAccelerationX(-ACCEL); this.facingRight = false; }
         else if (right) { this.body.setAccelerationX(ACCEL); this.facingRight = true; }
-        else { this.body.setAccelerationX(0); this.body.setDragX(DRAG * 0.5); }
+        else { this.body.setAccelerationX(0); this.body.setDragX(DRAG * 0.3); }
         if (Math.abs(this.body.velocity.x) > MAX_SPEED) {
             this.body.velocity.x = Math.sign(this.body.velocity.x) * MAX_SPEED;
         }
@@ -413,6 +421,10 @@ class Player {
             this.offGroundFrames = 0;
             if (grounded) {
                 this._enterState('idle');
+                // Landing: brief velocity pause for weight
+                this.body.setVelocityX(this.body.velocity.x * 0.6);
+                // Small landing dust particles
+                this._spawnLandingParticles();
                 return;
             }
         }
@@ -441,7 +453,7 @@ class Player {
         if (this.state === 'attack1_recovery') {
             this.stateTimer -= dt;
             // Combo chain to Attack2 — disabled when sword equipped (single heavy hit)
-            if (!this.abilities.sword && attack && this.stateTimer > 0.067 && this.stateTimer < 0.133) {
+            if (!this.abilities.sword && attack && this.stateTimer < 0.2) {
                 this._enterState('attack2_startup');
                 this.bufferAttack = 0;
                 return;
@@ -530,8 +542,15 @@ class Player {
             return;
         }
 
-        // Fixed horizontal speed; gravity applies normally for air dashes
-        this.body.setVelocityX(this.facingRight ? 600 : -600);
+        // Speed ramp: 400→600 over first 100ms
+        const elapsed = 0.25 - this.stateTimer;
+        const speedTarget = 600;
+        const speedStart = 400;
+        const rampTime = 0.1;
+        const t = Math.min(elapsed / rampTime, 1);
+        const speed = speedStart + (speedTarget - speedStart) * t;
+
+        this.body.setVelocityX(this.facingRight ? speed : -speed);
         this.body.setDragX(0);
         this.body.setAccelerationX(0);
 
@@ -598,6 +617,28 @@ class Player {
         }
     }
 
+    _spawnLandingParticles() {
+        for (let i = 0; i < 3; i++) {
+            const p = this.scene.add.circle(
+                this.x + Phaser.Math.Between(-10, 10),
+                this.y + 10,
+                Phaser.Math.Between(1, 3),
+                0x7FE0DE,
+                0.4
+            ).setDepth(5);
+            this.scene.tweens.add({
+                targets: p,
+                x: p.x + Phaser.Math.Between(-15, 15),
+                y: p.y + Phaser.Math.Between(5, 20),
+                alpha: 0,
+                scale: 0.2,
+                duration: 300,
+                ease: 'Power2',
+                onComplete: () => p.destroy(),
+            });
+        }
+    }
+
     _enterState(newState) {
         if (this.state === newState) return;
         this.state = newState;
@@ -608,15 +649,15 @@ class Player {
     _getStateDuration(state) {
         const at60fps = frames => frames / 60;
         switch (state) {
-            case 'attack1_startup': return at60fps(7);
+            case 'attack1_startup': return at60fps(6);
             case 'attack1_active': return at60fps(5);
-            case 'attack1_recovery': return at60fps(10);
-            case 'attack2_startup': return at60fps(8);
+            case 'attack1_recovery': return at60fps(6);
+            case 'attack2_startup': return at60fps(7);
             case 'attack2_active': return at60fps(6);
-            case 'attack2_recovery': return at60fps(12);
-            case 'air_attack_startup': return at60fps(7);
-            case 'air_attack_active': return at60fps(25);
-            case 'air_attack_recovery': return at60fps(8);
+            case 'attack2_recovery': return at60fps(8);
+            case 'air_attack_startup': return at60fps(5);
+            case 'air_attack_active': return at60fps(20);
+            case 'air_attack_recovery': return at60fps(6);
             case 'dashing': return 0.25;
             case 'hurt': return 0.3;
             case 'dead': return 99;
@@ -689,14 +730,25 @@ class Player {
                 this._setTextureStable('player_att2');
                 break;
             case 'air_attack_startup':
-            case 'air_attack_active':
-            case 'air_attack_recovery':
-                if (this.sprite.anims && this.sprite.anims.isPlaying) {
-                    this.sprite.anims.stop();
+                if (this.abilities.sword) {
+                    this.sprite.play('player_sword_air_attack');
+                    this._applyBodyConfig();
+                } else {
+                    if (this.sprite.anims && this.sprite.anims.isPlaying) {
+                        this.sprite.anims.stop();
+                    }
+                    this._setTextureStable('player_att1');
                 }
-                this._setTextureStable(this.abilities.sword ? 'player_sword_5' : 'player_att1');
-                if (state === 'air_attack_startup') {
-                    this.scene.sound.play('sfx_sword_air', { volume: 0.55 });
+                this.scene.sound.play('sfx_sword_air', { volume: 0.55 });
+                break;
+            case 'air_attack_active':
+                if (!this.abilities.sword) {
+                    this._setTextureStable('player_att1');
+                }
+                break;
+            case 'air_attack_recovery':
+                if (!this.abilities.sword) {
+                    this._setTextureStable('player_att1');
                 }
                 break;
             case 'dashing':

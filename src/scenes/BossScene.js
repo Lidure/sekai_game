@@ -27,7 +27,6 @@ class BossScene extends Phaser.Scene {
 
         this.bossDefeated = false;
         this.playerDied = false;
-        this.comboDisplayTimer = 0;
 
         // Pause menu (ESC to toggle)
         this.pauseMenu = new PauseMenu(this);
@@ -188,9 +187,9 @@ class BossScene extends Phaser.Scene {
         }
 
         this.cameras.main.shake(hitStop, shake / 100);
-        this.comboDisplayTimer = 2000;
         this.hud.showCombo(this.player.comboCount);
         this._spawnHitParticles(this.boss.x, this.boss.y - 20);
+        this._showDamageNumber(this.boss.x, this.boss.y - 20, dmg);
     }
 
     _spawnHitParticles(x, y) {
@@ -232,7 +231,6 @@ class BossScene extends Phaser.Scene {
         this.player.update(delta);
         this.boss.update(delta);
         this._updateHUD();
-        this._updateComboDisplay(delta);
         this._checkEndConditions();
         this._updateArenaBg();
     }
@@ -240,13 +238,8 @@ class BossScene extends Phaser.Scene {
     _updateHUD() {
         this.hud.drawPips(this.player.hp, this.player.maxHp);
         this.hud.drawFeelings(this.player.feelings, this.player.feelingsMax);
+        this.hud.drawAbilities(this.player.abilities);
         this.hud.showBossBar('Mafuyu', this.boss.hp, this.boss.maxHp);
-    }
-
-    _updateComboDisplay(delta) {
-        if (this.comboDisplayTimer > 0) {
-            this.comboDisplayTimer -= delta;
-        }
     }
 
     _checkEndConditions() {
@@ -283,7 +276,7 @@ class BossScene extends Phaser.Scene {
 
     _updateArenaBg() {
         if (this.boss && this.boss.phase === 2) {
-            const progress = 1 - this.boss.hp / (this.boss.maxHp / 2);
+            const progress = Math.max(0, 1 - this.boss.hp / (this.boss.maxHp / 2));
             const tint = Phaser.Display.Color.Interpolate.ColorWithColor(
                 { r: 10, g: 10, b: 26 },
                 { r: 20, g: 5, b: 40 },
@@ -293,6 +286,29 @@ class BossScene extends Phaser.Scene {
                 Phaser.Display.Color.GetColor(tint.r, tint.g, tint.b)
             );
         }
+    }
+
+    /* ================================================================== */
+    /*  Damage Numbers                                                      */
+    /* ================================================================== */
+
+    _showDamageNumber(x, y, amount) {
+        const txt = this.add.text(x + Phaser.Math.Between(-8, 8), y, `${amount}`, {
+            fontSize: '11px',
+            fontFamily: 'monospace',
+            color: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 2,
+        }).setOrigin(0.5).setDepth(100);
+
+        this.tweens.add({
+            targets: txt,
+            y: txt.y - 30,
+            alpha: 0,
+            duration: 600,
+            ease: 'Power2',
+            onComplete: () => txt.destroy(),
+        });
     }
 
     onBossDefeated() {

@@ -3,7 +3,7 @@ class BossMafuyu {
         this.scene = scene;
         this.sprite = scene.physics.add.sprite(x, y, 'boss_idle');
         this.sprite.setScale(0.18);
-        // Body source dimensions: 48/0.18=267, 64/0.18≈356 → 48x64 world pixels at scale 0.18
+        // Texture source: 720x720, scale 0.18 → ~130x130 visual; body 267x356 in texture space → 48x64 physics body
         this.sprite.body.setSize(267, 356);
         // Offset centers the 48x64 body on the 129.6x129.6 scaled sprite
         this.sprite.body.setOffset(227, 188);
@@ -34,7 +34,7 @@ class BossMafuyu {
 
         this.yBobTween = scene.tweens.add({
             targets: this.sprite,
-            y: this.sprite.y + 8,
+            y: this.sprite.y + 12,
             duration: 2000,
             yoyo: true,
             repeat: -1,
@@ -464,7 +464,7 @@ class BossMafuyu {
         if (this.yBobTween) this.yBobTween.stop();
         this.yBobTween = this.scene.tweens.add({
             targets: this.sprite,
-            y: this.sprite.y + 8,
+            y: this.sprite.y + 12,
             duration: 2000,
             yoyo: true,
             repeat: -1,

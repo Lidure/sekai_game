@@ -43,7 +43,7 @@ class AbilityItem {
         if (abilityKey === 'sword') {
             // — Sword texture image
             this.icon = scene.add.image(x, y, 'item_sword')
-                .setScale(0.15)
+                .setScale(0.08)
                 .setDepth(15);
             this.icon.setAlpha(0.9);
 

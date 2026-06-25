@@ -111,7 +111,7 @@ class BootScene extends Phaser.Scene {
         // Player run animation (frames 6-23 = middle 18 frames of run cycle, from 5×6 spritesheet)
         this.anims.create({
             key: 'player_run',
-            frames: this.anims.generateFrameNumbers('player_run_sheet', { start: 6, end: 23 }),
+            frames: this.anims.generateFrameNumbers('player_run_sheet', { start: 6, end: 20 }),
             frameRate: 18,
             repeat: -1,
         });
@@ -127,6 +127,18 @@ class BootScene extends Phaser.Scene {
                 { key: 'player_sword_5' },
             ],
             frameRate: 12,
+            repeat: 0,
+        });
+
+        // Sword air attack animation (sword_3, sword_4, sword_5 as a fast 3-frame animation)
+        this.anims.create({
+            key: 'player_sword_air_attack',
+            frames: [
+                { key: 'player_sword_3' },
+                { key: 'player_sword_4' },
+                { key: 'player_sword_5' },
+            ],
+            frameRate: 10,
             repeat: 0,
         });
 

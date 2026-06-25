@@ -32,8 +32,8 @@ class Skeleton extends Enemy {
             bodyHeight: 44,
         });
 
-        // Spritesheet frame is 48×56, scale to ~41×48 display pixels
-        this.sprite.setScale(0.85);
+        // Spritesheet frame is 48×56, scale to full 48×56 display for a threatening medium enemy
+        this.sprite.setScale(1.0);
         // Center the origin for easier hitbox alignment
         this.sprite.setOrigin(0.5, 0.5);
 

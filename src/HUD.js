@@ -39,13 +39,15 @@ class HUD {
         }).setOrigin(0.5).setScrollFactor(0).setDepth(100).setAlpha(0);
 
         this.comboTween = null;
+        this.scaleTween = null;
 
         // Ability icons (bottom-right)
         this.abilityGraphics = [];
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 4; i++) {
             const g = scene.add.graphics().setScrollFactor(0).setDepth(100);
             this.abilityGraphics.push(g);
         }
+        this._lastAbilityState = null;
 
         this._layout();
     }
@@ -165,28 +167,62 @@ class HUD {
         const barH = 5;
         const bx = w / 2 - barW / 2;
         const by = this.scene.scale.height - 34;
+        const pct = Phaser.Math.Clamp(value / maxValue, 0, 1);
 
         this.feelBg.clear();
         this.feelBg.fillStyle(0x1a1a2e, 0.8);
         this.feelBg.fillRoundedRect(bx, by, barW, barH, 2);
 
-        const pct = Phaser.Math.Clamp(value / maxValue, 0, 1);
         this.feelFill.clear();
         if (pct > 0) {
-            this.feelFill.fillStyle(0xa8d8ff, 1);
+            // Color changes based on fill level
+            let color = 0xa8d8ff;
+            if (pct >= 1.0) color = 0xFFD700;
+            else if (pct > 0.7) color = 0x7FE0DE;
+
+            this.feelFill.fillStyle(color, 1);
             this.feelFill.fillRoundedRect(bx + 1, by + 1, (barW - 2) * pct, barH - 2, 1);
+
+            // Full feelings: pulsing gold glow behind the bar
+            if (pct >= 1.0) {
+                const glowAlpha = 0.2 + 0.3 * Math.sin(this.scene.time.now / 200);
+                this.feelFill.fillStyle(0xFFD700, glowAlpha);
+                this.feelFill.fillRoundedRect(bx - 2, by - 2, barW + 4, barH + 4, 4);
+            }
         }
     }
 
     showCombo(count) {
         if (count < 2) { this.comboText.setAlpha(0); return; }
+
+        let fontSize, color;
+        if (count >= 10) { fontSize = '24px'; color = '#FF4444'; }
+        else if (count >= 5) { fontSize = '20px'; color = '#FFD700'; }
+        else { fontSize = '16px'; color = '#ffffff'; }
+
+        this.comboText.setFontSize(parseInt(fontSize));
+        this.comboText.setColor(color);
         this.comboText.setText(`RESONANCE ×${count}`);
         this.comboText.setAlpha(1);
+
         if (this.comboTween) this.comboTween.stop();
+
+        // Scale pop for mid-high combos
+        if (count >= 5) {
+            if (this.scaleTween) this.scaleTween.stop();
+            this.comboText.setScale(1.3);
+            this.scaleTween = this.scene.tweens.add({
+                targets: this.comboText,
+                scale: 1,
+                duration: 200,
+                ease: 'Back.easeOut',
+            });
+        }
+
         this.comboTween = this.scene.tweens.add({
             targets: this.comboText,
             alpha: 0,
-            duration: 1500,
+            duration: count >= 10 ? 2000 : 1500,
             ease: 'Power2',
         });
     }
@@ -197,24 +233,31 @@ class HUD {
 
     /**
      * Draw ability icons at the bottom-right of the screen.
-     * @param {{ dash: boolean, doubleJump: boolean, shadowCloak: boolean }} abilities
+     * @param {{ dash: boolean, doubleJump: boolean, shadowCloak: boolean, sword: boolean }} abilities
      */
     drawAbilities(abilities) {
         if (!abilities) return;
 
+        // Cache: skip redraw if ability state hasn't changed
+        const stateKey = [abilities.dash, abilities.doubleJump, abilities.shadowCloak, abilities.sword].join(',');
+        if (stateKey === this._lastAbilityState) return;
+        this._lastAbilityState = stateKey;
+
         const iconPositions = [
-            { x: 720, y: 540 },  // Dash — leftmost
-            { x: 742, y: 540 },  // Double Jump — middle
-            { x: 764, y: 540 },  // Shadow Cloak — rightmost
+            { x: 720, y: 540 },  // Dash
+            { x: 742, y: 540 },  // Double Jump
+            { x: 764, y: 540 },  // Shadow Cloak
+            { x: 786, y: 540 },  // Sword
         ];
 
         const hasAbility = [
             abilities.dash || false,
             abilities.doubleJump || false,
             abilities.shadowCloak || false,
+            abilities.sword || false,
         ];
 
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 4; i++) {
             const g = this.abilityGraphics[i];
             g.clear();
             const { x, y } = iconPositions[i];
@@ -267,6 +310,15 @@ class HUD {
                 g.lineTo(x + 1, y + 8);
                 g.closePath();
                 g.fillPath();
+                break;
+            }
+            case 3: { // Sword — crossed blades (pink)
+                g.fillStyle(0xFF87A0, 0.15);
+                g.fillCircle(x + 8, y + 8, 10);
+                g.fillStyle(0xFF87A0, 1);
+                g.lineStyle(2, 0xFF87A0, 1);
+                g.lineBetween(x + 3, y + 3, x + 13, y + 13);
+                g.lineBetween(x + 13, y + 3, x + 3, y + 13);
                 break;
             }
         }
