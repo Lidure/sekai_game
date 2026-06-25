@@ -9,13 +9,21 @@ class BootScene extends Phaser.Scene {
         this.load.image('player_idle',   'assets/images/player_mfy/mfy1.png');
         this.load.image('player_att1',   'assets/images/player_mfy/mfy_att1.png');
         this.load.image('player_att2',   'assets/images/player_mfy/mfy_att2.png');
+        // Sword attack textures (unlocked via ability pickup)
+        this.load.image('player_sword_1', 'assets/images/player_mfy/mfy_sword_1.png');
+        this.load.image('player_sword_2', 'assets/images/player_mfy/mfy_sword_2.png');
+        this.load.image('player_sword_3', 'assets/images/player_mfy/mfy_sword_3.png');
+        this.load.image('player_sword_4', 'assets/images/player_mfy/mfy_sword_4.png');
+        this.load.image('player_sword_5', 'assets/images/player_mfy/mfy_sword_5.png');
+        this.load.image('item_sword',   'assets/images/weapon_sword.png');
         this.load.image('player_down',   'assets/images/player_mfy/mfy_down.png');
         this.load.image('player_jump',   'assets/images/player_mfy/mfy_jump.png');
 
-        // Player run frames (11-frame cycle from player_mfy)
-        for (let i = 1; i <= 11; i++) {
-            this.load.image('player_run' + i, 'assets/images/player_mfy/mfy_run' + i + '.png');
-        }
+        // Player run spritesheet (6 columns × 5 rows, 720×720 each — frames 0-10 for 11-frame cycle)
+        this.load.spritesheet('player_run_sheet', 'assets/images/player_mfy/mfy_run.png', {
+            frameWidth: 720,
+            frameHeight: 720,
+        });
 
         // Boss2 (Mafuyu) textures from boss2_mfy (dedicated boss — NOT shared with player)
         this.load.image('boss_idle',        'assets/images/boss2_mfy/boss_idle.png');
@@ -100,17 +108,26 @@ class BootScene extends Phaser.Scene {
         bg.generateTexture('bg_tile', 64, 64);
         bg.destroy();
 
-        // Player run animation (11-frame cycle from boss_run1~11 assets)
+        // Player run animation (frames 6-23 = middle 18 frames of run cycle, from 5×6 spritesheet)
         this.anims.create({
             key: 'player_run',
-            frames: [
-                { key: 'player_run1' }, { key: 'player_run2' }, { key: 'player_run3' },
-                { key: 'player_run4' }, { key: 'player_run5' }, { key: 'player_run6' },
-                { key: 'player_run7' }, { key: 'player_run8' }, { key: 'player_run9' },
-                { key: 'player_run10' }, { key: 'player_run11' },
-            ],
-            frameRate: 16.7,
+            frames: this.anims.generateFrameNumbers('player_run_sheet', { start: 6, end: 23 }),
+            frameRate: 18,
             repeat: -1,
+        });
+
+        // Sword attack animation (5 single-image frames at 12fps — ~417ms total swing)
+        this.anims.create({
+            key: 'player_sword_attack',
+            frames: [
+                { key: 'player_sword_1' },
+                { key: 'player_sword_2' },
+                { key: 'player_sword_3' },
+                { key: 'player_sword_4' },
+                { key: 'player_sword_5' },
+            ],
+            frameRate: 12,
+            repeat: 0,
         });
 
         // Item textures (collectible pickups)

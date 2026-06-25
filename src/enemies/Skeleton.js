@@ -67,6 +67,9 @@ class Skeleton extends Enemy {
 
         switch (this.state) {
             case 'patrol':
+                // Show idle/walk frame — frame 0 is the default standing pose
+                this.sprite.setFrame(0);
+
                 // Walk in patrol direction
                 this.body.setVelocityX(this.patrolDir * 35);
 
@@ -81,6 +84,9 @@ class Skeleton extends Enemy {
                 break;
 
             case 'approach':
+                // Show idle/walk frame
+                this.sprite.setFrame(0);
+
                 // Walk toward player
                 this.body.setVelocityX(Math.sign(dist) * 45);
                 this.sprite.setFlipX(dist > 0);
@@ -106,22 +112,30 @@ class Skeleton extends Enemy {
                 // Count down
                 this.stateTimer -= dtSec;
 
-                // ── Telegraph phase (0.0–0.4s): white tint ──
+                // ── Telegraph phase (0.0–0.4s): wind-up frame + white tint ──
                 if (this.stateTimer > 0.7) {
+                    // Frame 3: compact wind-up pose — weapon pulled back
+                    this.sprite.setFrame(3);
                     this.sprite.setTint(0xffffff);
                 }
                 // ── Active hitbox (0.4–0.5s = 0.1s ≈ 6 frames) ──
                 else if (this.stateTimer > 0.6) {
+                    // Frame 6: white swing flash on right side (weapon extending)
+                    this.sprite.setFrame(6);
                     this.sprite.clearTint();
 
                     // Deal damage once per swing
                     if (!this._meleeHitDealt) {
-                        const hDist = Math.abs(this.x - playerX);
-                        const vDist = Math.abs(this.y - playerY);
+                        const dx = playerX - this.x;
+                        const dy = Math.abs(this.y - playerY);
 
-                        // Hitbox is 30px wide × 20px tall in front of skeleton
-                        if (hDist < 30 && vDist < 10) {
-                            const knockDir = this.sprite.flipX ? 1 : -1;
+                        // Direction check: only hit player in front of skeleton
+                        // flipX = false means sprite faces right, true = faces left
+                        const facingRight = !this.sprite.flipX;
+                        const isInFront = facingRight ? (dx > 0) : (dx < 0);
+
+                        if (isInFront && Math.abs(dx) < 30 && dy < 10) {
+                            const knockDir = facingRight ? 1 : -1;
                             this.scene.player.takeDamage(
                                 this.meleeDamage,
                                 80 * knockDir,
@@ -131,13 +145,15 @@ class Skeleton extends Enemy {
                         }
                     }
                 }
-                // ── Recovery phase (0.5–1.1s) ──
+                // ── Recovery phase (0.5–1.1s): return to idle frame ──
                 else if (this.stateTimer > 0) {
+                    this.sprite.setFrame(0);
                     this.sprite.clearTint();
                 }
 
                 // ── Attack complete ──
                 if (this.stateTimer <= 0) {
+                    this.sprite.setFrame(0);
                     this.sprite.clearTint();
                     this.attackCooldown = 2;  // 2s before next attack
                     this.state = 'approach';

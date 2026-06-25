@@ -341,8 +341,17 @@ class MenuScene extends Phaser.Scene {
                 this._continueGame();
                 break;
             case 'credits':
-                this.sound.play('sfx_ui_confirm', { volume: 0.5 });
-                SceneManager.goTo(this, 'CreditsScene');
+                if (this.bgm) {
+                    this.tweens.add({
+                        targets: this.bgm,
+                        volume: 0,
+                        duration: 500,
+                        onComplete: () => { this.bgm.stop(); this.bgm.destroy(); this.bgm = null; },
+                    });
+                }
+                this.time.delayedCall(300, () => {
+                    SceneManager.goTo(this, 'CreditsScene');
+                });
                 break;
             default:
                 this.inputEnabled = true;

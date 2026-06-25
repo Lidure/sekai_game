@@ -75,15 +75,10 @@ class BossMafuyu {
         this.vulnerable = false;
         this.state = 'phase_transition';
         this.body.setVelocity(0, 0);
-
-        // Hit-stop: freeze physics + white flash for dramatic impact
-        this.scene.physics.pause();
-        this.scene.cameras.main.flash(500, 255, 255, 255);
-        this.scene.time.delayedCall(500, () => {
-            this.scene.physics.resume();
-        });
-
         this.sprite.setTexture('boss_liberation');
+
+        // Simple camera flash only
+        this.scene.cameras.main.flash(300, 255, 255, 255);
 
         // Audio — fade out Phase 1 BGM, fade in Phase 2 BGM
         const scene = this.scene;
@@ -108,23 +103,16 @@ class BossMafuyu {
         });
 
         this.scene.time.delayedCall(500, () => {
-            this.scene.tweens.add({
-                targets: this.sprite,
-                y: 150,
-                duration: 1000,
-                ease: 'Sine.easeOut',
-                onComplete: () => {
-                    this.scene.cameras.main.flash(300, 255, 255, 255);
-                    this.scene.time.delayedCall(1000, () => {
-                        this.phase = 2;
-                        this.desperate = false;
-                        this.transitioning = false;
-                        this.vulnerable = true;
-                        this.state = 'idle';
-                        this.aiTimer = 0;
-                        this.sprite.setTexture('boss_liberation');
-                    });
-                },
+            // Use velocity to fly upward instead of tweening sprite position
+            this.body.setVelocityY(-180);  // Fly up
+            this.scene.time.delayedCall(1000, () => {
+                this.body.setVelocityY(0);
+                this.phase = 2;
+                this.desperate = false;
+                this.transitioning = false;
+                this.vulnerable = true;
+                this.state = 'idle';
+                this.sprite.setTexture('boss_liberation');
             });
         });
     }

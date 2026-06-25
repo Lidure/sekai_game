@@ -164,15 +164,16 @@ class BossScene extends Phaser.Scene {
         if (!this.boss || this.boss.defeated || !this.boss.vulnerable || this.boss.invulnTimer > 0) return;
 
         let dmg, kbx, kby, shake, hitStop;
+        const sword = this.player.abilities.sword;
         switch (this.player.state) {
             case 'attack1_active':
-                dmg = 13; kbx = 130; kby = -45; shake = 3; hitStop = 67;
+                dmg = sword ? 28 : 13; kbx = 130; kby = -45; shake = 3; hitStop = 67;
                 break;
             case 'attack2_active':
                 dmg = 22; kbx = 200; kby = -70; shake = 5; hitStop = 100;
                 break;
             case 'air_attack_active':
-                dmg = 18; kbx = 90; kby = -90; shake = 3; hitStop = 67;
+                dmg = sword ? 22 : 18; kbx = 90; kby = -90; shake = 3; hitStop = 67;
                 break;
             default:
                 return;

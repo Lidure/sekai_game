@@ -63,20 +63,8 @@ class GameScene extends Phaser.Scene {
         // Listen for overlay (BossScene) results
         this._setupOverlayListener();
 
-        // Listen for player death — stop BGM
-        this._deathBgmStopped = false;
-        this.events.on('player-died', () => {
-            if (this._deathBgmStopped) return;
-            this._deathBgmStopped = true;
-            if (this.bgm && this.bgm.isPlaying) {
-                this.tweens.add({
-                    targets: this.bgm,
-                    volume: 0,
-                    duration: 800,
-                    onComplete: () => { this.bgm.stop(); this.bgm.destroy(); this.bgm = null; },
-                });
-            }
-        });
+        // Listen for player death — show game over, then respawn
+        this.events.on('player-died', () => this._handleGameOver());
 
         // Apply save data if loading from CONTINUE
         if (this.loadSaveData) {
@@ -118,6 +106,32 @@ class GameScene extends Phaser.Scene {
             this.player.reset(120, 530.8, 50);
         }
         this.bossActive = false;
+    }
+
+    /** Handle player death: show game over text, then respawn. */
+    _handleGameOver() {
+        // Fade out BGM
+        if (this.bgm) {
+            this.tweens.add({ targets: this.bgm, volume: 0, duration: 800 });
+        }
+
+        // Show GAME OVER text centered on screen (fixed to camera)
+        const goText = this.add.text(400, 250, 'GAME OVER', {
+            fontSize: '32px', fontFamily: 'monospace', color: '#ff6666',
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
+
+        // After 2 seconds, respawn player and restore world
+        this.time.delayedCall(2000, () => {
+            goText.destroy();
+            this.player.reset(120, 530.8, 50);
+            this._resetEnemies();
+            this._resetCollectibles();
+            if (this.bgm) {
+                this.bgm.stop();
+                this.bgm.play();
+                this.tweens.add({ targets: this.bgm, volume: 0.30, duration: 1000 });
+            }
+        });
     }
 
     _createBackground() {
@@ -350,15 +364,16 @@ class GameScene extends Phaser.Scene {
         if (!enemy || enemy.dead || enemy.invulnTimer > 0) return;
 
         let dmg, kbx, kby, shake, hitStop;
+        const sword = this.player.abilities.sword;
         switch (this.player.state) {
             case 'attack1_active':
-                dmg = 13; kbx = 130; kby = -45; shake = 3; hitStop = 67;
+                dmg = sword ? 28 : 13; kbx = 130; kby = -45; shake = 3; hitStop = 67;
                 break;
             case 'attack2_active':
                 dmg = 22; kbx = 200; kby = -70; shake = 5; hitStop = 100;
                 break;
             case 'air_attack_active':
-                dmg = 18; kbx = 90; kby = -90; shake = 3; hitStop = 67;
+                dmg = sword ? 22 : 18; kbx = 90; kby = -90; shake = 3; hitStop = 67;
                 break;
             default:
                 return;
@@ -506,6 +521,11 @@ class GameScene extends Phaser.Scene {
                 x: 3200, y: 320,
                 key: 'doubleJump',
                 name: 'DOUBLE JUMP',
+            },
+            {
+                x: 2500, y: 400,
+                key: 'sword',
+                name: 'SWORD OF TRUTH',
             },
         ];
 

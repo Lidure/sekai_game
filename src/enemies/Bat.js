@@ -53,46 +53,52 @@ class Bat extends Enemy {
         }
 
         switch (this.state) {
-            case 'patrol':
+            case 'patrol': {
                 // Sine-wave horizontal ±50px oscillation at 30px/s
                 // Position amplitude = speed / ω ≈ 30 / 0.8 ≈ 37.5px
                 this.body.setVelocityX(Math.sin(time * 0.8) * this.patrolSpeed);
 
-                // Vertical bob ±8px with ~1.5s period
-                this.sprite.y = this.originY + Math.sin(time * Math.PI * 2 / 1.5) * 8;
+                // Vertical bob ±8px with ~1.5s period (velocity-based, Arcade-safe)
+                const bobVY = Math.cos(time * (Math.PI * 2 / 1.5)) * 34;
+                this.body.setVelocityY(bobVY);
 
                 // Player within detection range
                 if (absDist < 120) {
                     this.state = 'chase';
                 }
                 break;
+            }
 
-            case 'chase':
+            case 'chase': {
                 // Fly toward player horizontally
                 this.body.setVelocityX(Math.sign(dist) * this.chaseSpeed);
 
-                // Vertical bob (slightly faster during chase — agitated)
-                this.sprite.y = this.originY + Math.sin(time * Math.PI * 2 / 1.2) * 8;
+                // Vertical bob (slightly faster during chase — agitated, velocity-based)
+                const bobVY = Math.cos(time * (Math.PI * 2 / 1.2)) * 42;
+                this.body.setVelocityY(bobVY);
 
                 // Player escaped (too far) or too close (flinches away)
                 if (absDist > 180 || absDist < 40) {
-                    this.stateTimer = 1000; // retreat for 1 second
+                    this.stateTimer = 1.0; // retreat for 1 second
                     this.state = 'retreat';
                 }
                 break;
+            }
 
-            case 'retreat':
+            case 'retreat': {
                 // Fly away from player
                 this.body.setVelocityX(Math.sign(-dist) * this.retreatSpeed);
 
-                // Vertical bob (calmer retreat)
-                this.sprite.y = this.originY + Math.sin(time * Math.PI * 2 / 1.5) * 6;
+                // Vertical bob (calmer retreat, velocity-based)
+                const bobVY = Math.cos(time * (Math.PI * 2 / 1.5)) * 25;
+                this.body.setVelocityY(bobVY);
 
-                this.stateTimer -= dt;
+                this.stateTimer -= dt / 1000;
                 if (this.stateTimer <= 0) {
                     this.state = 'patrol';
                 }
                 break;
+            }
         }
     }
 }

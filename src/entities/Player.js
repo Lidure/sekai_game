@@ -34,7 +34,7 @@ class Player {
         this.invulnTimer = 0;
         this.bufferAttack = -1;
 
-        this.abilities = { dash: false, doubleJump: false, shadowCloak: false };
+        this.abilities = { dash: false, doubleJump: false, shadowCloak: false, sword: false };
         this.dashUsedThisJump = false;
         this.dashCooldownTimer = 0;
 
@@ -205,6 +205,11 @@ class Player {
             sprite.setActive(false);
         });
 
+        // Step 7 (1800ms): emit player-died event for GameScene to handle
+        scene.time.delayedCall(1800, () => {
+            scene.events.emit('player-died');
+        });
+
         // Scene (e.g., BossScene) handles death transitions → no auto-restart here
     }
 
@@ -278,7 +283,7 @@ class Player {
                 break;
             case 'attack2_startup':
             case 'attack2_recovery':
-                this._handleAttack2State(dt);
+                this._handleAttack2State(dt, attack);
                 break;
             case 'attack2_active':
                 this._handleAttack2Active(dt);
@@ -435,7 +440,8 @@ class Player {
         }
         if (this.state === 'attack1_recovery') {
             this.stateTimer -= dt;
-            if (attack && this.stateTimer > 0.067 && this.stateTimer < 0.133) {
+            // Combo chain to Attack2 — disabled when sword equipped (single heavy hit)
+            if (!this.abilities.sword && attack && this.stateTimer > 0.067 && this.stateTimer < 0.133) {
                 this._enterState('attack2_startup');
                 this.bufferAttack = 0;
                 return;
@@ -455,7 +461,7 @@ class Player {
         }
     }
 
-    _handleAttack2State(dt) {
+    _handleAttack2State(dt, attack) {
         // Only zero X velocity on ground; in air, allow horizontal drift
         if (this.isGroundedStable) {
             this.body.setVelocityX(0);
@@ -645,28 +651,42 @@ class Player {
                 this._setTextureStable('player_jump');
                 break;
             case 'attack1_startup':
-                if (this.sprite.anims && this.sprite.anims.isPlaying) {
-                    this.sprite.anims.stop();
+                if (this.abilities.sword) {
+                    // Play the 5-frame sword swing animation
+                    this.sprite.play('player_sword_attack');
+                    this._applyBodyConfig();
+                } else {
+                    if (this.sprite.anims && this.sprite.anims.isPlaying) {
+                        this.sprite.anims.stop();
+                    }
+                    this._setTextureStable('player_att1');
                 }
-                this._setTextureStable('player_att1');
                 this.scene.sound.play('sfx_sword_att1', { volume: 0.6 });
                 break;
+            case 'attack1_active':
+                // When sword equipped, the animation plays through naturally
+                if (!this.abilities.sword) {
+                    this._setTextureStable('player_att1');
+                }
+                break;
             case 'attack1_recovery':
-                this._setTextureStable('player_att1');
+                // When sword equipped, the animation finishes on player_sword_5
+                if (!this.abilities.sword) {
+                    this._setTextureStable('player_att1');
+                }
                 break;
             case 'attack2_startup':
                 if (this.sprite.anims && this.sprite.anims.isPlaying) {
                     this.sprite.anims.stop();
                 }
-                this._setTextureStable('player_att1');
+                this._setTextureStable('player_att2');
                 this.scene.sound.play('sfx_sword_att2', { volume: 0.7 });
                 break;
             case 'attack2_recovery':
-                this._setTextureStable('player_att1');
+                this._setTextureStable('player_att2');
                 break;
-            case 'attack1_active':
             case 'attack2_active':
-                this._setTextureStable('player_att1');
+                this._setTextureStable('player_att2');
                 break;
             case 'air_attack_startup':
             case 'air_attack_active':
@@ -674,7 +694,7 @@ class Player {
                 if (this.sprite.anims && this.sprite.anims.isPlaying) {
                     this.sprite.anims.stop();
                 }
-                this._setTextureStable('player_att1');
+                this._setTextureStable(this.abilities.sword ? 'player_sword_5' : 'player_att1');
                 if (state === 'air_attack_startup') {
                     this.scene.sound.play('sfx_sword_air', { volume: 0.55 });
                 }
@@ -683,7 +703,7 @@ class Player {
                 if (this.sprite.anims && this.sprite.anims.isPlaying) {
                     this.sprite.anims.stop();
                 }
-                this._setTextureStable('player_run');
+                this.sprite.setTexture('player_run_sheet', 0);
                 this.sprite.setTint(0x7FE0DE);
                 this._disableHitbox();
                 this.scene.sound.play('sfx_player_dash', { volume: 0.5 });
@@ -792,6 +812,7 @@ class Player {
             this.abilities.dash = !!data.abilities.dash;
             this.abilities.doubleJump = !!data.abilities.doubleJump;
             this.abilities.shadowCloak = !!data.abilities.shadowCloak;
+            this.abilities.sword = !!data.abilities.sword;
         }
     }
 

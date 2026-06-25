@@ -22,7 +22,7 @@ class AbilityItem {
      * @param {Phaser.Scene} scene       - Owning GameScene
      * @param {number}       x           - World X position
      * @param {number}       y           - World Y position
-     * @param {string}       abilityKey  - 'dash' | 'doubleJump'
+     * @param {string}       abilityKey  - 'dash' | 'doubleJump' | 'sword'
      * @param {string}       displayName - Human-readable name for the pickup text
      */
     constructor(scene, x, y, abilityKey, displayName) {
@@ -34,26 +34,44 @@ class AbilityItem {
         this.displayName = displayName;
         this.collected = false;
 
-        // — Color palette
+        // — Color palette (used for graphics-based diamond)
         this.color = abilityKey === 'dash' ? 0x2EC4B6 : 0x7FE0DE;
-
-        // — Visual: diamond / crystal
-        this.gfx = scene.add.graphics().setDepth(15);
-        this._drawDiamond(1);
-        this.gfx.setPosition(x, y);
 
         // — Float animation state
         this.floatPhase = Math.random() * Math.PI * 2;
 
-        // — Glow pulse tween (alpha 0.6 ↔ 1.0)
-        this.glowTween = scene.tweens.add({
-            targets: this.gfx,
-            alpha: { from: 1, to: 0.6 },
-            duration: 750,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.easeInOut',
-        });
+        if (abilityKey === 'sword') {
+            // — Sword texture image
+            this.icon = scene.add.image(x, y, 'item_sword')
+                .setScale(0.15)
+                .setDepth(15);
+            this.icon.setAlpha(0.9);
+
+            // — Glow pulse tween on the sword image (alpha 0.7 ↔ 1.0)
+            this.glowTween = scene.tweens.add({
+                targets: this.icon,
+                alpha: { from: 0.7, to: 1 },
+                duration: 1200,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut',
+            });
+        } else {
+            // — Visual: diamond / crystal (for dash, doubleJump, etc.)
+            this.gfx = scene.add.graphics().setDepth(15);
+            this._drawDiamond(1);
+            this.gfx.setPosition(x, y);
+
+            // — Glow pulse tween (alpha 0.6 ↔ 1.0)
+            this.glowTween = scene.tweens.add({
+                targets: this.gfx,
+                alpha: { from: 1, to: 0.6 },
+                duration: 750,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut',
+            });
+        }
 
         // — Physics zone for overlap detection (static, immovable)
         this.zone = scene.add.zone(x, y, 28, 28);
@@ -139,8 +157,9 @@ class AbilityItem {
         this.scene.cameras.main.flash(350, 127, 196, 255);
 
         // ── Destroy visuals and physics ────────────────────────────────
-        this.scene.tweens.killTweensOf(this.gfx);
-        this.gfx.destroy();
+        this.scene.tweens.killTweensOf(this.gfx || this.icon);
+        if (this.gfx) this.gfx.destroy();
+        if (this.icon) this.icon.destroy();
         this.scene.physics.world.removeCollider(this.overlapCollider);
         this.zone.destroy();
 
@@ -190,8 +209,10 @@ class AbilityItem {
         if (this.collected) return;
 
         const floatOffset = Math.sin(time / 1000 * 1.5 + this.floatPhase) * 4;
-        this.gfx.setPosition(this.worldX, this.baseY + floatOffset);
-        this.zone.setPosition(this.worldX, this.baseY + floatOffset);
+        const y = this.baseY + floatOffset;
+        if (this.gfx) this.gfx.setPosition(this.worldX, y);
+        if (this.icon) this.icon.setPosition(this.worldX, y);
+        this.zone.setPosition(this.worldX, y);
     }
 
     /* ------------------------------------------------------------------ */
@@ -199,8 +220,9 @@ class AbilityItem {
     /* ------------------------------------------------------------------ */
 
     destroy() {
-        this.scene.tweens.killTweensOf(this.gfx);
+        this.scene.tweens.killTweensOf(this.gfx || this.icon);
         if (this.gfx && this.gfx.active) this.gfx.destroy();
+        if (this.icon && this.icon.active) this.icon.destroy();
         if (this.zone && this.zone.active) {
             this.scene.physics.world.removeCollider(this.overlapCollider);
             this.zone.destroy();
