@@ -46,21 +46,21 @@ class CreditsScene extends Phaser.Scene {
 
         // Solid dark fill
         bg.fillStyle(0x0a0a1a);
-        bg.fillRect(0, 0, 800, 600);
+        bg.fillRect(0, 0, 960, 720);
 
         // Subtle grid
         bg.lineStyle(1, 0x1a1a3e, 0.25);
-        for (let x = 0; x <= 800; x += 50) {
-            bg.lineBetween(x, 0, x, 600);
+        for (let x = 0; x <= 960; x += 50) {
+            bg.lineBetween(x, 0, x, 720);
         }
-        for (let y = 0; y <= 600; y += 50) {
-            bg.lineBetween(0, y, 800, y);
+        for (let y = 0; y <= 720; y += 50) {
+            bg.lineBetween(0, y, 960, y);
         }
 
         // Small decorative crosses at grid intersections
         bg.lineStyle(1, 0x1a1a3e, 0.15);
-        for (let x = 0; x <= 800; x += 50) {
-            for (let y = 0; y <= 600; y += 50) {
+        for (let x = 0; x <= 960; x += 50) {
+            for (let y = 0; y <= 720; y += 50) {
                 bg.fillStyle(0x1a1a3e, 0.2);
                 bg.fillRect(x - 1, y - 1, 3, 3);
             }
@@ -73,8 +73,8 @@ class CreditsScene extends Phaser.Scene {
     _createParticles() {
         const colors = [0x44ccff, 0x9966ff, 0x66eeff];
         for (let i = 0; i < 40; i++) {
-            const x = Phaser.Math.Between(0, 800);
-            const y = Phaser.Math.Between(0, 600);
+            const x = Phaser.Math.Between(0, 960);
+            const y = Phaser.Math.Between(0, 720);
             const size = Phaser.Math.FloatBetween(1, 3);
             const color = Phaser.Utils.Array.GetRandom(colors);
             const speed = Phaser.Math.Between(20, 60);
@@ -102,8 +102,8 @@ class CreditsScene extends Phaser.Scene {
 
             // Reset when off-screen top
             if (p.obj.y < -10) {
-                p.obj.y = 610;
-                p.obj.x = Phaser.Math.Between(0, 800);
+                p.obj.y = 730;
+                p.obj.x = Phaser.Math.Between(0, 960);
             }
         }
     }
@@ -113,8 +113,8 @@ class CreditsScene extends Phaser.Scene {
     /* ------------------------------------------------------------------ */
 
     _buildTitle() {
-        this.add.text(400, 60, 'CREDITS', {
-            fontSize: '32px',
+        this.add.text(480, 72, 'CREDITS', {
+            fontSize: '36px',
             fontFamily: 'monospace',
             color: '#a8d8ff',
         }).setOrigin(0.5).setDepth(10);
@@ -122,7 +122,7 @@ class CreditsScene extends Phaser.Scene {
         // Decorative line under title
         const deco = this.add.graphics().setDepth(9);
         deco.lineStyle(1, 0x2a6a9f, 0.3);
-        deco.lineBetween(300, 90, 500, 90);
+        deco.lineBetween(360, 108, 600, 108);
     }
 
     /* ------------------------------------------------------------------ */
@@ -130,14 +130,14 @@ class CreditsScene extends Phaser.Scene {
     /* ------------------------------------------------------------------ */
 
     _buildEndTexts() {
-        this.endThankYou = this.add.text(400, 260, 'THANK YOU FOR PLAYING', {
-            fontSize: '22px',
+        this.endThankYou = this.add.text(480, 312, 'THANK YOU FOR PLAYING', {
+            fontSize: '26px',
             fontFamily: 'monospace',
             color: '#7FE0DE',
         }).setOrigin(0.5).setDepth(10).setAlpha(0);
 
-        this.endReturn = this.add.text(400, 310, 'PRESS J TO RETURN', {
-            fontSize: '14px',
+        this.endReturn = this.add.text(480, 372, 'PRESS J TO RETURN', {
+            fontSize: '16px',
             fontFamily: 'monospace',
             color: '#4a6a9f',
         }).setOrigin(0.5).setDepth(10).setAlpha(0);
@@ -178,16 +178,16 @@ class CreditsScene extends Phaser.Scene {
 
         // Style presets used by credit entries
         const styles = {
-            title:   { fontSize: '24px', fontFamily: 'monospace', color: '#a8d8ff' },
-            section: { fontSize: '16px', fontFamily: 'monospace', color: '#7FE0DE' },
-            body:    { fontSize: '16px', fontFamily: 'monospace', color: '#c8d8ff' },
-            small:   { fontSize: '14px', fontFamily: 'monospace', color: '#7a7a9a' },
-            quote:   { fontSize: '15px', fontFamily: 'monospace', color: '#7FE0DE' },
+            title:   { fontSize: '28px', fontFamily: 'monospace', color: '#a8d8ff' },
+            section: { fontSize: '20px', fontFamily: 'monospace', color: '#7FE0DE' },
+            body:    { fontSize: '20px', fontFamily: 'monospace', color: '#c8d8ff' },
+            small:   { fontSize: '16px', fontFamily: 'monospace', color: '#7a7a9a' },
+            quote:   { fontSize: '18px', fontFamily: 'monospace', color: '#7FE0DE' },
         };
 
         // Vertical leading (px) per style type
         const leadings = {
-            title: 36, section: 28, body: 24, small: 22, quote: 24, spacer: 24,
+            title: 42, section: 32, body: 28, small: 26, quote: 28, spacer: 28,
         };
 
         this.creditContainer = this.add.container(0, 0).setDepth(5);
@@ -200,7 +200,7 @@ class CreditsScene extends Phaser.Scene {
             }
             const style = styles[entry.style] || styles.body;
             const leading = leadings[entry.style] || 24;
-            const text = this.add.text(400, y, entry.text, style)
+            const text = this.add.text(480, y, entry.text, style)
                 .setOrigin(0.5, 0);
             this.creditContainer.add(text);
             y += leading;

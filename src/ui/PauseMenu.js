@@ -70,12 +70,12 @@ class PauseMenu {
     /* ================================================================== */
 
     _build() {
-        const W = 800;
-        const H = 600;
+        const W = 960;
+        const H = 720;
 
         // Panel dimensions
-        const pW = 320;
-        const pH = 280;
+        const pW = 384;
+        const pH = 336;
         const px = (W - pW) / 2;     // 240
         const py = (H - pH) / 2 - 10; // 150
         const cx = W / 2;            // 400 (screen centre, also panel centre)
@@ -128,7 +128,7 @@ class PauseMenu {
         /* ---- Title ---- */
         const titleStr = '\u25C6 PAUSED \u25C6';
         this.titleText = this.scene.add.text(cx, py + 35, titleStr, {
-            fontSize: '24px',
+            fontSize: '28px',
             fontFamily: 'monospace',
             color: '#7FE0DE',
         }).setOrigin(0.5);
@@ -136,7 +136,7 @@ class PauseMenu {
 
         // Title shadow (offset pixel-duplicate for crisp pixel effect)
         const titleShadow = this.scene.add.text(cx + 1, py + 36, titleStr, {
-            fontSize: '24px',
+            fontSize: '28px',
             fontFamily: 'monospace',
             color: '#2EC4B6',
         }).setOrigin(0.5).setAlpha(0.25);
@@ -167,9 +167,9 @@ class PauseMenu {
         this.itemContainers = []; // sub-containers for stagger animation
         this.itemYs = [];
 
-        const itemX = cx - 90;    // left-aligned text start (310)
+        const itemX = cx - 90;    // left-aligned text start (390)
         const startY = py + 86;
-        const gap = 38;
+        const gap = 42;
 
         itemDefs.forEach((def, i) => {
             const y = startY + i * gap;
@@ -182,7 +182,7 @@ class PauseMenu {
 
             // Pink caret indicator (visible when selected)
             const caret = this.scene.add.text(-4, 0, '\u25B6', {
-                fontSize: '11px',
+                fontSize: '13px',
                 fontFamily: 'monospace',
                 color: '#FF87A0',
             }).setOrigin(0.5).setAlpha(0);
@@ -190,20 +190,38 @@ class PauseMenu {
 
             // Label
             const txt = this.scene.add.text(itemX, 0, def.label, {
-                fontSize: '14px',
+                fontSize: '16px',
                 fontFamily: 'monospace',
                 color: '#c8d8ff',
             }).setOrigin(0, 0.5);
             sub.add(txt);
             this.itemTexts.push(txt);
 
+            if (def.action !== null) {
+                txt.setInteractive({ useHandCursor: true });
+                txt.on('pointerover', () => {
+                    if (!this._canInteract() || this.confirmMode) return;
+                    this.selectedIndex = i;
+                    this._updateSelection();
+                    this._updateHelpText();
+                });
+                txt.on('pointerup', (pointer) => {
+                    if (!this._canInteract() || this.confirmMode) return;
+                    if (pointer.button !== 0) return;
+                    this.selectedIndex = i;
+                    this._updateSelection();
+                    this._updateHelpText();
+                    this._confirm();
+                });
+            }
+
             this.items.push({ sub, caret, text: txt, action: def.action, label: def.label, y });
         });
 
         /* ---- Fullscreen indicator ---- */
         // "[ON]" or "[OFF]" shown to the right of the FULLSCREEN item
-        this.fsText = this.scene.add.text(485, startY + 2 * gap, '', {
-            fontSize: '12px',
+        this.fsText = this.scene.add.text(582, startY + 2 * gap, '', {
+            fontSize: '14px',
             fontFamily: 'monospace',
             color: '#7FE0DE',
         }).setOrigin(0, 0.5);
@@ -217,7 +235,7 @@ class PauseMenu {
 
         /* ---- Help text at panel bottom ---- */
         this.helpText = this.scene.add.text(cx, py + pH - 16, '', {
-            fontSize: '10px',
+            fontSize: '12px',
             fontFamily: 'monospace',
             color: '#3a4a6a',
         }).setOrigin(0.5);
@@ -242,7 +260,7 @@ class PauseMenu {
 
         // Percentage label to the right of the bar
         this.volPctText = this.scene.add.text(barX + barW + 8, y, '', {
-            fontSize: '12px',
+            fontSize: '14px',
             fontFamily: 'monospace',
             color: '#a8d8ff',
         }).setOrigin(0, 0.5);
@@ -300,14 +318,14 @@ class PauseMenu {
         // Dim overlay
         const dim = this.scene.add.graphics();
         dim.fillStyle(0x000000, 0.40);
-        dim.fillRect(0, 0, 800, 600);
+        dim.fillRect(0, 0, 960, 720);
         this.confirmGroup.add(dim);
 
         // Popup rectangle
-        const popW = 230;
-        const popH = 100;
-        const popX = (800 - popW) / 2;
-        const popY = (600 - popH) / 2;
+        const popW = 276;
+        const popH = 120;
+        const popX = (960 - popW) / 2;
+        const popY = (720 - popH) / 2;
         const pcx = popX + popW / 2;
 
         const popup = this.scene.add.graphics();
@@ -321,7 +339,7 @@ class PauseMenu {
 
         // Title text
         const confirmTitle = this.scene.add.text(pcx, popY + 26, 'RETURN TO MENU?', {
-            fontSize: '13px',
+            fontSize: '15px',
             fontFamily: 'monospace',
             color: '#a8d8ff',
         }).setOrigin(0.5);
@@ -339,12 +357,26 @@ class PauseMenu {
         cLabels.forEach((label, i) => {
             const x = pcx - 38 + i * 76;
             const txt = this.scene.add.text(x, popY + 66, label, {
-                fontSize: '13px',
+                fontSize: '15px',
                 fontFamily: 'monospace',
                 color: '#c8d8ff',
             }).setOrigin(0.5);
             this.confirmGroup.add(txt);
             this.confirmTexts.push(txt);
+
+            txt.setInteractive({ useHandCursor: true });
+            txt.on('pointerover', () => {
+                if (!this._canInteract() || !this.confirmMode) return;
+                this.confirmChoice = i;
+                this._updateConfirmGlow();
+            });
+            txt.on('pointerup', (pointer) => {
+                if (!this._canInteract() || !this.confirmMode) return;
+                if (pointer.button !== 0) return;
+                this.confirmChoice = i;
+                this._updateConfirmGlow();
+                this._confirm();
+            });
         });
 
         // Selection glow for confirmation choices
@@ -553,7 +585,7 @@ class PauseMenu {
         const hlLeft = px + 14;      // 254
         const hlRight = px + pW - 14; // 546
         const hlW = hlRight - hlLeft;
-        const hlH = 30;
+        const hlH = 34;
 
         // Colour code each item
         this.items.forEach((item, i) => {

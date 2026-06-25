@@ -24,6 +24,11 @@ class MenuScene extends Phaser.Scene {
         this.items = [];                 // { text, action, disabled }
         this.particles = [];             // { obj, speed, phase }
 
+        // Defensive cleanup so returning from gameplay never leaves old BGM behind.
+        ['bgm_menu', 'bgm_explore', 'bgm_boss_p1', 'bgm_boss_p2'].forEach((key) => {
+            this.sound.stopByKey(key);
+        });
+
         this._buildBackground();
         this._buildTitle();
         this._buildMenuItems();
@@ -65,21 +70,21 @@ class MenuScene extends Phaser.Scene {
 
         // Solid dark fill
         bg.fillStyle(0x0a0a1a);
-        bg.fillRect(0, 0, 800, 600);
+        bg.fillRect(0, 0, 960, 720);
 
         // Subtle grid
         bg.lineStyle(1, 0x1a1a3e, 0.25);
-        for (let x = 0; x <= 800; x += 50) {
-            bg.lineBetween(x, 0, x, 600);
+        for (let x = 0; x <= 960; x += 50) {
+            bg.lineBetween(x, 0, x, 720);
         }
-        for (let y = 0; y <= 600; y += 50) {
-            bg.lineBetween(0, y, 800, y);
+        for (let y = 0; y <= 720; y += 50) {
+            bg.lineBetween(0, y, 960, y);
         }
 
         // Small decorative crosses at grid intersections
         bg.lineStyle(1, 0x1a1a3e, 0.15);
-        for (let x = 0; x <= 800; x += 50) {
-            for (let y = 0; y <= 600; y += 50) {
+        for (let x = 0; x <= 960; x += 50) {
+            for (let y = 0; y <= 720; y += 50) {
                 bg.fillStyle(0x1a1a3e, 0.2);
                 bg.fillRect(x - 1, y - 1, 3, 3);
             }
@@ -92,8 +97,8 @@ class MenuScene extends Phaser.Scene {
     _createParticles() {
         const colors = [0x44ccff, 0x9966ff, 0x66eeff];
         for (let i = 0; i < 40; i++) {
-            const x = Phaser.Math.Between(0, 800);
-            const y = Phaser.Math.Between(0, 600);
+            const x = Phaser.Math.Between(0, 960);
+            const y = Phaser.Math.Between(0, 720);
             const size = Phaser.Math.FloatBetween(1, 3);
             const color = Phaser.Utils.Array.GetRandom(colors);
             const speed = Phaser.Math.Between(20, 60);
@@ -121,8 +126,8 @@ class MenuScene extends Phaser.Scene {
 
             // Reset when off-screen top
             if (p.obj.y < -10) {
-                p.obj.y = 610;
-                p.obj.x = Phaser.Math.Between(0, 800);
+                p.obj.y = 730;
+                p.obj.x = Phaser.Math.Between(0, 960);
             }
         }
     }
@@ -133,8 +138,8 @@ class MenuScene extends Phaser.Scene {
 
     _buildTitle() {
         // "SEKAI" with a glow-like shadow
-        const title = this.add.text(400, 150, 'SEKAI', {
-            fontSize: '48px',
+        const title = this.add.text(480, 180, 'SEKAI', {
+            fontSize: '52px',
             fontFamily: 'monospace',
             color: '#a8d8ff',
             shadow: {
@@ -150,7 +155,7 @@ class MenuScene extends Phaser.Scene {
         // Subtle floating animation
         this.tweens.add({
             targets: title,
-            y: 158,
+            y: 188,
             duration: 2800,
             yoyo: true,
             repeat: -1,
@@ -158,8 +163,8 @@ class MenuScene extends Phaser.Scene {
         });
 
         // Subtitle
-        this.add.text(400, 210, 'A 25-ji Metroidvania', {
-            fontSize: '14px',
+        this.add.text(480, 252, 'A 25-ji Metroidvania', {
+            fontSize: '16px',
             fontFamily: 'monospace',
             color: '#7FE0DE',
         }).setOrigin(0.5).setDepth(10);
@@ -167,7 +172,7 @@ class MenuScene extends Phaser.Scene {
         // Decorative line under the title area
         const deco = this.add.graphics().setDepth(9);
         deco.lineStyle(1, 0x2a6a9f, 0.3);
-        deco.lineBetween(250, 250, 550, 250);
+        deco.lineBetween(300, 300, 660, 300);
     }
 
     /* ------------------------------------------------------------------ */
@@ -188,8 +193,8 @@ class MenuScene extends Phaser.Scene {
             { label: 'CREDITS',   action: 'credits',  disabled: false },
         ];
 
-        const startY = 360;
-        const gap = 50;
+        const startY = 432;
+        const gap = 60;
 
         itemDefs.forEach((def, i) => {
             const y = startY + i * gap;
@@ -197,10 +202,26 @@ class MenuScene extends Phaser.Scene {
                 ? Object.assign({}, GAME_FONTS.menuDisabled)
                 : Object.assign({}, GAME_FONTS.menuItem);
 
-            const text = this.add.text(400, y, def.label, style)
+            const text = this.add.text(480, y, def.label, style)
                 .setOrigin(0.5)
                 .setDepth(10)
                 .setAlpha(0);
+
+            if (!def.disabled) {
+                text.setInteractive({ useHandCursor: true });
+                text.on('pointerover', () => {
+                    if (!this.inputEnabled) return;
+                    this.selectedIndex = i;
+                    this._updateSelection();
+                });
+                text.on('pointerup', (pointer) => {
+                    if (!this.inputEnabled) return;
+                    if (pointer.button !== 0) return;
+                    this.selectedIndex = i;
+                    this._updateSelection();
+                    this._confirmItem();
+                });
+            }
 
             // Stagger-in: fade up and slide in from slightly below
             this.tweens.add({
@@ -272,8 +293,8 @@ class MenuScene extends Phaser.Scene {
     /* ------------------------------------------------------------------ */
 
     _buildHint() {
-        const hint = this.add.text(400, 550, 'PRESS J TO START', {
-            fontSize: '12px',
+        const hint = this.add.text(480, 660, 'PRESS J TO START', {
+            fontSize: '14px',
             fontFamily: 'monospace',
             color: '#4a6a9f',
         }).setOrigin(0.5).setDepth(10);
@@ -289,8 +310,8 @@ class MenuScene extends Phaser.Scene {
         });
 
         // Version number
-        this.add.text(790, 586, 'v0.5.0', {
-            fontSize: '10px',
+        this.add.text(950, 703, 'v0.5.0', {
+            fontSize: '12px',
             fontFamily: 'monospace',
             color: '#3a4a7a',
         }).setOrigin(1, 1).setDepth(10).setAlpha(0.7);

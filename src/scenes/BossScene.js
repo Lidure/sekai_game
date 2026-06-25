@@ -43,6 +43,10 @@ class BossScene extends Phaser.Scene {
 
         // Fade in on entry
         this.cameras.main.fadeIn(500);
+
+        this.events.once('shutdown', () => {
+            this._stopBossBgm();
+        });
     }
 
     _createArena() {
@@ -192,6 +196,19 @@ class BossScene extends Phaser.Scene {
         this._showDamageNumber(this.boss.x, this.boss.y - 20, dmg);
     }
 
+    _stopBossBgm() {
+        if (this.bgmPhase1) {
+            this.bgmPhase1.stop();
+            this.bgmPhase1.destroy();
+            this.bgmPhase1 = null;
+        }
+        if (this.bgmPhase2) {
+            this.bgmPhase2.stop();
+            this.bgmPhase2.destroy();
+            this.bgmPhase2 = null;
+        }
+    }
+
     _spawnHitParticles(x, y) {
         for (let i = 0; i < 5; i++) {
             const p = this.add.circle(x, y, 3, 0xffffff)
@@ -294,7 +311,7 @@ class BossScene extends Phaser.Scene {
 
     _showDamageNumber(x, y, amount) {
         const txt = this.add.text(x + Phaser.Math.Between(-8, 8), y, `${amount}`, {
-            fontSize: '11px',
+            fontSize: '13px',
             fontFamily: 'monospace',
             color: '#ffffff',
             stroke: '#000000',
@@ -319,7 +336,7 @@ class BossScene extends Phaser.Scene {
         if (this.bgmPhase2) { this.bgmPhase2.stop(); this.bgmPhase2.destroy(); this.bgmPhase2 = null; }
 
         const victoryText = this.add.text(800, 200, 'MEMORY FRAGMENT\nACQUIRED', {
-            fontSize: '28px',
+            fontSize: '34px',
             fontFamily: 'monospace',
             color: '#a8d8ff',
             align: 'center',

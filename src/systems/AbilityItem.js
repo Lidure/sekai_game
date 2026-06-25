@@ -5,7 +5,7 @@
  *
  * Visual:
  *   - Diamond/crystal shape drawn with Phaser Graphics
- *   - Teal-cyan (#2EC4B6) for dash, light cyan (#7FE0DE) for double jump
+ *   - Teal-cyan (#2EC4B6) for dash, purple-pink for shadow dash, light cyan (#7FE0DE) for double jump
  *   - Float animation: sine wave y-bob (amplitude 4px, period ~1.5s)
  *   - Glow pulse: alpha 0.6 → 1.0 tween (oscillating)
  *
@@ -22,7 +22,7 @@ class AbilityItem {
      * @param {Phaser.Scene} scene       - Owning GameScene
      * @param {number}       x           - World X position
      * @param {number}       y           - World Y position
-     * @param {string}       abilityKey  - 'dash' | 'doubleJump' | 'sword'
+     * @param {string}       abilityKey  - 'dash' | 'shadowCloak' | 'doubleJump' | 'sword'
      * @param {string}       displayName - Human-readable name for the pickup text
      */
     constructor(scene, x, y, abilityKey, displayName) {
@@ -35,7 +35,11 @@ class AbilityItem {
         this.collected = false;
 
         // — Color palette (used for graphics-based diamond)
-        this.color = abilityKey === 'dash' ? 0x2EC4B6 : 0x7FE0DE;
+        this.color = abilityKey === 'dash'
+            ? 0x2EC4B6
+            : abilityKey === 'shadowCloak'
+                ? 0xFF87A0
+                : 0x7FE0DE;
 
         // — Float animation state
         this.floatPhase = Math.random() * Math.PI * 2;

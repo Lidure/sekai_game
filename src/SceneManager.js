@@ -3,12 +3,12 @@
  * All gameplay text uses monospace for pixel-art consistency.
  */
 const GAME_FONTS = {
-    title:       { fontSize: '48px', fontFamily: 'monospace', color: '#a8d8ff' },
-    subtitle:    { fontSize: '14px', fontFamily: 'monospace', color: '#7FE0DE' },
-    menuItem:    { fontSize: '20px', fontFamily: 'monospace', color: '#c8d8ff' },
-    menuDisabled:{ fontSize: '20px', fontFamily: 'monospace', color: '#3a3a5a' },
-    hint:        { fontSize: '12px', fontFamily: 'monospace', color: '#4a6a9f' },
-    hud:         { fontSize: '14px', fontFamily: 'monospace', color: '#a8d8ff' },
+    title:       { fontSize: '52px', fontFamily: 'monospace', color: '#a8d8ff' },
+    subtitle:    { fontSize: '16px', fontFamily: 'monospace', color: '#7FE0DE' },
+    menuItem:    { fontSize: '24px', fontFamily: 'monospace', color: '#c8d8ff' },
+    menuDisabled:{ fontSize: '24px', fontFamily: 'monospace', color: '#3a3a5a' },
+    hint:        { fontSize: '14px', fontFamily: 'monospace', color: '#4a6a9f' },
+    hud:         { fontSize: '16px', fontFamily: 'monospace', color: '#a8d8ff' },
     bossName:    { fontSize: '16px', fontFamily: 'monospace', color: '#a8d8ff' },
 };
 

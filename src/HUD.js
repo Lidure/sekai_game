@@ -2,20 +2,20 @@ class HUD {
     constructor(scene) {
         this.scene = scene;
 
-        this.pipSize = 14;
-        this.pipGap = 4;
-        this.pipX = 20;
-        this.pipY = 20;
+        this.pipSize = 16;
+        this.pipGap = 5;
+        this.pipX = 24;
+        this.pipY = 24;
 
         this.heartContainers = [];
-        // Pre-allocate enough containers for max possible HP (150 max / 10 = 15)
-        for (let i = 0; i < 15; i++) {
+        // Pre-allocate enough containers for max possible HP (200 max / 10 = 20)
+        for (let i = 0; i < 20; i++) {
             const g = scene.add.graphics().setScrollFactor(0).setDepth(100);
             this.heartContainers.push(g);
         }
 
-        this.bossName = scene.add.text(0, 18, '', {
-            fontSize: '14px',
+        this.bossName = scene.add.text(0, 22, '', {
+            fontSize: '16px',
             fontFamily: 'monospace',
             color: '#a8d8ff',
         }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(100).setAlpha(0);
@@ -24,7 +24,7 @@ class HUD {
         this.bossBarFill = scene.add.graphics().setScrollFactor(0).setDepth(101).setAlpha(0);
 
         this.feelLabel = scene.add.text(0, 0, 'FEELINGS', {
-            fontSize: '10px',
+            fontSize: '13px',
             fontFamily: 'monospace',
             color: '#a8d8ff',
         }).setOrigin(0.5).setScrollFactor(0).setDepth(100);
@@ -33,7 +33,7 @@ class HUD {
         this.feelFill = scene.add.graphics().setScrollFactor(0).setDepth(101);
 
         this.comboText = scene.add.text(0, 0, '', {
-            fontSize: '16px',
+            fontSize: '20px',
             fontFamily: 'monospace',
             color: '#ffffff',
         }).setOrigin(0.5).setScrollFactor(0).setDepth(100).setAlpha(0);
@@ -54,15 +54,16 @@ class HUD {
 
     _layout() {
         const w = this.scene.scale.width;
-        this.bossName.setPosition(w / 2, 18);
+        const h = this.scene.scale.height;
+        this.bossName.setPosition(w / 2, 22);
         this.bossBarBg.setPosition(0, 0);
         this.bossBarFill.setPosition(0, 0);
 
-        this.feelLabel.setPosition(w / 2, this.scene.scale.height - 30);
+        this.feelLabel.setPosition(w / 2, h - 36);
         this.feelBg.setPosition(0, 0);
         this.feelFill.setPosition(0, 0);
 
-        this.comboText.setPosition(w / 2 + 80, this.scene.scale.height / 2 - 40);
+        this.comboText.setPosition(w / 2 + 100, h / 2 - 50);
     }
 
     drawPips(hp, maxHp) {
@@ -126,10 +127,10 @@ class HUD {
         this.bossBarFill.setAlpha(1);
 
         const w = this.scene.scale.width;
-        const barW = 200;
-        const barH = 10;
+        const barW = 260;
+        const barH = 12;
         const bx = w / 2 - barW / 2;
-        const by = 34;
+        const by = 38;
 
         this.bossBarBg.clear();
         this.bossBarBg.fillStyle(0x1a1a2e, 0.9);
@@ -163,10 +164,10 @@ class HUD {
     drawFeelings(value, maxValue) {
         if (maxValue === undefined) maxValue = 100;
         const w = this.scene.scale.width;
-        const barW = 140;
-        const barH = 5;
+        const barW = 180;
+        const barH = 7;
         const bx = w / 2 - barW / 2;
-        const by = this.scene.scale.height - 34;
+        const by = this.scene.scale.height - 42;
         const pct = Phaser.Math.Clamp(value / maxValue, 0, 1);
 
         this.feelBg.clear();
@@ -196,9 +197,9 @@ class HUD {
         if (count < 2) { this.comboText.setAlpha(0); return; }
 
         let fontSize, color;
-        if (count >= 10) { fontSize = '24px'; color = '#FF4444'; }
-        else if (count >= 5) { fontSize = '20px'; color = '#FFD700'; }
-        else { fontSize = '16px'; color = '#ffffff'; }
+        if (count >= 10) { fontSize = '28px'; color = '#FF4444'; }
+        else if (count >= 5) { fontSize = '24px'; color = '#FFD700'; }
+        else { fontSize = '20px'; color = '#ffffff'; }
 
         this.comboText.setFontSize(parseInt(fontSize));
         this.comboText.setColor(color);
@@ -244,10 +245,10 @@ class HUD {
         this._lastAbilityState = stateKey;
 
         const iconPositions = [
-            { x: 720, y: 540 },  // Dash
-            { x: 742, y: 540 },  // Double Jump
-            { x: 764, y: 540 },  // Shadow Cloak
-            { x: 786, y: 540 },  // Sword
+            { x: 880, y: 660 },  // Dash
+            { x: 902, y: 660 },  // Double Jump
+            { x: 924, y: 660 },  // Shadow Cloak
+            { x: 946, y: 660 },  // Sword
         ];
 
         const hasAbility = [
