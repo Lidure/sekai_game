@@ -69,6 +69,15 @@ const PLATFORM_DATA = [
     { x: 2112, y: 349, w: 3 },
     { x: 2368, y: 399, w: 4 },
     { x: 2624, y: 319, w: 3 },
+    // Drop-down shortcut landing
+    { x: 2368, y: 510, w: 3 },
+    // Shaft platforms
+    { x: 2688, y: 500, w: 2 },
+    { x: 2816, y: 320, w: 2 },
+    { x: 2688, y: 260, w: 2 },
+    { x: 2816, y: 240, w: 2 },
+    // Boss high route
+    { x: 3776, y: 300, w: 4 },
     // Section 5: Pre-Boss Gauntlet
     { x: 2880, y: 429, w: 3 },
     { x: 3072, y: 359, w: 3 },

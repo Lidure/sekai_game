@@ -19,10 +19,13 @@ class FloatingShard extends Enemy {
             hp: 4,
             contactDamage: 8,
             feelingsDrop: 5,
-            bodyWidth: 14,
-            bodyHeight: 14,
+            bodyWidth: 28,
+            bodyHeight: 28,
             noGravity: true,
         });
+
+        // Asset is 31x44 gothic ghost; scale to ~15.5x22 display to match original floating shard size
+        this.sprite.setScale(0.5);
 
         this.originX = x;
         this.originY = y;

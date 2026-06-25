@@ -4,7 +4,7 @@ class BossScene extends Phaser.Scene {
     }
 
     init(data) {
-        this.playerData = data || { hp: 100, feelings: 0 };
+        this.playerData = data || { hp: 100, maxHp: 100, feelings: 0, feelingsMax: 100 };
     }
 
     create() {
@@ -80,10 +80,12 @@ class BossScene extends Phaser.Scene {
         platforms.add(collider);
     }
 
-_createPlayer() {
+    _createPlayer() {
         this.player = new Player(this, 200, 480);
         this.player.hp = this.playerData.hp || 100;
+        this.player.maxHp = this.playerData.maxHp || 100;
         this.player.feelings = this.playerData.feelings || 0;
+        this.player.feelingsMax = this.playerData.feelingsMax || 100;
         if (this.playerData.abilities) {
             Object.assign(this.player.abilities, this.playerData.abilities);
         }
@@ -235,8 +237,8 @@ _createPlayer() {
     }
 
     _updateHUD() {
-        this.hud.drawPips(this.player.hp);
-        this.hud.drawFeelings(this.player.feelings);
+        this.hud.drawPips(this.player.hp, this.player.maxHp);
+        this.hud.drawFeelings(this.player.feelings, this.player.feelingsMax);
         this.hud.showBossBar('Mafuyu', this.boss.hp, this.boss.maxHp);
     }
 

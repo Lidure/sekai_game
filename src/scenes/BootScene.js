@@ -26,6 +26,12 @@ class BootScene extends Phaser.Scene {
 
         // Boss1 (Miku) — reserved, not yet implemented
 
+        // ── Enemy textures (real pixel art — replaces programmatic generation) ──
+        this.load.image('enemy_shadow', 'assets/images/enemies/common/dark_forest_slime/Enemy_Forest_Idle_01.png');
+        this.load.image('enemy_shard',  'assets/images/enemies/floating/ghost_gothicvania/Ghost1.png');
+        this.load.image('enemy_bat',    'assets/images/enemies/floating/bat/Bat_Full.png');
+        this.load.spritesheet('enemy_skeleton', 'assets/images/enemies/shadow/skeleton/skeleton-Sheet.png', { frameWidth: 48, frameHeight: 56 });
+
         // ── Audio ─────────────────────────────────────────────────────
         // BGM
         this.load.audio('bgm_menu',      'assets/audio/bgm/menu_title.mp3');
@@ -94,9 +100,6 @@ class BootScene extends Phaser.Scene {
         bg.generateTexture('bg_tile', 64, 64);
         bg.destroy();
 
-        // Enemy textures (programmatic — no art assets needed)
-        this._generateEnemyTextures();
-
         // Player run animation (11-frame cycle from boss_run1~11 assets)
         this.anims.create({
             key: 'player_run',
@@ -110,27 +113,97 @@ class BootScene extends Phaser.Scene {
             repeat: -1,
         });
 
+        // Item textures (collectible pickups)
+        this._generateItemTextures();
+
+        // Vanish textures (player death animation — dissipating ghost silhouette)
+        this._generateVanishTextures();
+
         this.scene.start('MenuScene');
     }
 
-    _generateEnemyTextures() {
-        // Shadow Fragment: dark blob with teal eyes (24x24)
-        const sg = this.make.graphics({ add: false });
-        sg.fillStyle(0x1a1a3e, 0.85);
-        sg.fillCircle(12, 10, 10);
-        sg.fillStyle(0x40d0c0, 0.9);
-        sg.fillCircle(8, 8, 2);
-        sg.fillCircle(16, 8, 2);
-        sg.generateTexture('enemy_shadow', 24, 24);
-        sg.destroy();
+    /* _generateEnemyTextures() removed — enemy textures now loaded as real
+     * pixel art assets in preload(). See enemy_shadow (dark_forest_slime)
+     * and enemy_shard (ghost_gothicvania) image loads above. */
 
-        // Floating Shard: purple crystal triangle (16x16)
-        const sh = this.make.graphics({ add: false });
-        sh.fillStyle(0x7b52c0, 0.9);
-        sh.fillTriangle(8, 0, 0, 16, 16, 16);
-        sh.fillStyle(0x9966ff, 0.6);
-        sh.fillTriangle(8, 4, 3, 14, 13, 14);
-        sh.generateTexture('enemy_shard', 16, 16);
-        sh.destroy();
+    /** Generate programmatic textures for collectible items. */
+    _generateItemTextures() {
+        // ── HP Fragment: pink heart crystal (16×16) ──────────────────────
+        const hp = this.make.graphics({ add: false });
+        hp.fillStyle(0xFF87A0, 1);
+        // Heart shape using rectangles
+        hp.fillRect(4, 3, 2, 2);
+        hp.fillRect(10, 3, 2, 2);
+        hp.fillRect(3, 5, 10, 6);
+        hp.fillRect(5, 11, 6, 2);
+        hp.fillRect(6, 13, 4, 1);
+        hp.fillStyle(0xFFA8C0, 1);
+        hp.fillRect(4, 5, 4, 2);
+        hp.fillRect(5, 3, 2, 2);
+        hp.generateTexture('item_hp_fragment', 16, 16);
+        hp.destroy();
+
+        // ── Feelings Shard: teal diamond (16×16) ─────────────────────────
+        const fl = this.make.graphics({ add: false });
+        fl.fillStyle(0x2EC4B6, 1);
+        fl.fillTriangle(8, 0, 0, 8, 8, 16);
+        fl.fillTriangle(8, 0, 16, 8, 8, 16);
+        fl.fillStyle(0x5AE0D0, 1);
+        fl.fillTriangle(8, 2, 2, 8, 8, 14);
+        fl.generateTexture('item_feelings_shard', 16, 16);
+        fl.destroy();
+
+        // ── Health Orb: white circle with cross (16×16) ──────────────────
+        const h = this.make.graphics({ add: false });
+        h.fillStyle(0xa8d8ff, 1);
+        h.fillCircle(8, 8, 7);
+        h.fillStyle(0xffffff, 1);
+        h.fillRect(6, 3, 4, 10);
+        h.fillRect(3, 6, 10, 4);
+        h.generateTexture('item_health_orb', 16, 16);
+        h.destroy();
+    }
+
+    /** Generate programmatic vanish textures for player death animation. */
+    _generateVanishTextures() {
+        const S = 720; // match player texture size so body config stays valid
+        const cx = S / 2; // 360
+        const white = 0xCCCCFF;
+        const white2 = 0xEEEEFF;
+        const white3 = 0xFFFFFF;
+
+        // Vanish 1: Full ghostly humanoid silhouette (solid, bright)
+        let g = this.make.graphics({ add: false });
+        g.fillStyle(white3, 0.9);
+        g.fillCircle(cx, 140, 55);           // head
+        g.fillRect(cx - 42, 200, 84, 180);    // torso
+        g.fillRect(cx - 105, 200, 60, 28);    // left arm
+        g.fillRect(cx + 45, 200, 60, 28);     // right arm
+        g.fillRect(cx - 38, 380, 32, 100);    // left leg
+        g.fillRect(cx + 6, 380, 32, 100);     // right leg
+        g.generateTexture('player_vanish1', S, S);
+        g.destroy();
+
+        // Vanish 2: Figure partially dissolved — narrower torso, fewer parts
+        g = this.make.graphics({ add: false });
+        g.fillStyle(white2, 0.65);
+        g.fillCircle(cx, 140, 48);           // head (slightly smaller)
+        g.fillRect(cx - 35, 205, 70, 140);    // torso (narrower, shorter)
+        g.fillRect(cx + 45, 200, 55, 24);     // right arm only
+        g.fillRect(cx - 36, 380, 28, 90);     // left leg
+        g.fillRect(cx + 8, 385, 28, 85);      // right leg (offset)
+        g.generateTexture('player_vanish2', S, S);
+        g.destroy();
+
+        // Vanish 3: Barely visible fragments — just head + torso ghost
+        g = this.make.graphics({ add: false });
+        g.fillStyle(white, 0.35);
+        g.fillCircle(cx, 140, 38);            // head (ghostly)
+        g.fillRect(cx - 24, 210, 48, 70);     // upper torso fragment
+        g.fillStyle(white, 0.2);
+        g.fillRect(cx - 28, 295, 18, 50);     // lower body fragment
+        g.fillRect(cx + 10, 315, 18, 40);
+        g.generateTexture('player_vanish3', S, S);
+        g.destroy();
     }
 }

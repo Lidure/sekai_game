@@ -75,6 +75,14 @@ class BossMafuyu {
         this.vulnerable = false;
         this.state = 'phase_transition';
         this.body.setVelocity(0, 0);
+
+        // Hit-stop: freeze physics + white flash for dramatic impact
+        this.scene.physics.pause();
+        this.scene.cameras.main.flash(500, 255, 255, 255);
+        this.scene.time.delayedCall(500, () => {
+            this.scene.physics.resume();
+        });
+
         this.sprite.setTexture('boss_liberation');
 
         // Audio — fade out Phase 1 BGM, fade in Phase 2 BGM

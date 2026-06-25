@@ -17,9 +17,12 @@ class ShadowFragment extends Enemy {
             hp: 3,
             contactDamage: 5,
             feelingsDrop: 2,
-            bodyWidth: 20,
-            bodyHeight: 20,
+            bodyWidth: 27,
+            bodyHeight: 27,
         });
+
+        // Asset is 32x32 dark forest slime; scale to 24x24 display to match original visual size
+        this.sprite.setScale(0.75);
 
         this.patrolSpeed = 40;
         this.chaseSpeed = 65;

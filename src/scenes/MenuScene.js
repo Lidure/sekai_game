@@ -185,7 +185,7 @@ class MenuScene extends Phaser.Scene {
         const itemDefs = [
             { label: 'NEW GAME',  action: 'newGame',  disabled: false },
             { label: 'CONTINUE',  action: 'continue', disabled: !hasSave },
-            { label: 'CREDITS',   action: 'credits',  disabled: true  },
+            { label: 'CREDITS',   action: 'credits',  disabled: false },
         ];
 
         const startY = 360;
@@ -339,6 +339,10 @@ class MenuScene extends Phaser.Scene {
                 break;
             case 'continue':
                 this._continueGame();
+                break;
+            case 'credits':
+                this.sound.play('sfx_ui_confirm', { volume: 0.5 });
+                SceneManager.goTo(this, 'CreditsScene');
                 break;
             default:
                 this.inputEnabled = true;

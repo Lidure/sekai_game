@@ -3,7 +3,7 @@ const config = {
     width: 800,
     height: 600,
     parent: 'game-container',
-    scene: [BootScene, MenuScene, GameScene, BossScene],
+    scene: [BootScene, MenuScene, GameScene, BossScene, CreditsScene],
     physics: {
         default: 'arcade',
         arcade: {

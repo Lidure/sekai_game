@@ -1,81 +1,65 @@
 ﻿# Active Session State
 
-**Current Task**: Audio Integration — Design Document + Code Implementation
-**Date**: 2026-06-24
+**Current Task**: NPC Interaction System — Design + Implementation
+**Date**: 2026-06-25
 
-## Design Document Created
-- `design/audio-direction.md` — Full audio direction document (sound palette, BGM map, SFX categories, mix strategy, event architecture, asset specs)
+## Files Created
+- `src/systems/NPC.js` (NEW — 358 lines)
 
-## Audio Files Sourced (In Previous Session)
-| Category | Count | Details |
-|----------|-------|---------|
-| BGM | 7 | menu_title, chiptune_exploration, boss_battle_bpm145, boss_climax_bpm185, 8Bit_Title_Screen, Fun_Adventure, jrpg_boss_battle |
-| Player SFX | 5 | jump_01/02, hurt_01/02, death |
-| Sword SFX | 5 | blade_01/02, slash_rpg, sword_attack, sword_synth_shing |
-| Enemy SFX | 12 | hurt_01-03, death_01/02, retro_die_01/02, fly, slime_01/02, roar, laser_01/02, metal_hit |
-| Combo SFX | 5 | resonance, feelings_01/02, powerup_01/02 |
-| UI SFX | 9 | navigate_01/02, confirm_01/02, coin_01, beep_01/02, retro_coin, menu_select |
-| Magic | 8 | 4 existing + 4 new from RPG pack |
+## Files Modified
+- `src/scenes/GameScene.js` — Added NPC spawning, proximity detection, dialogue handling
+- `index.html` — Added `<script src="src/systems/NPC.js">`
 
-## Code Files Modified
+## NPC System Summary
 
-### BootScene.js
-- Added audio preloading for all 17 audio keys (BGM + SFX)
+### Visual
+- Graphics-drawn character (head circle + body rect + hair rect), ~24×32 world pixels
+- 25-ji colour palette: dark teal body (#1A3A3A), pale skin head (#E8F0F8), teal eyes (#2EC4B6)
+- Configurable hair colour per NPC (Wanderer: dark purple-gray #4A4A6A, K: teal #2EC4B6)
+- Depth: 5 (same as enemies)
 
-### Player.js
-- `takeDamage()` → plays `sfx_player_hurt` (vol 0.7)
-- `die()` → plays `sfx_player_death` (vol 0.8)
-- `_onStateEnter('jump')` → plays `sfx_player_jump` (vol 0.5)
-- `_onStateEnter('attack1_startup')` → plays `sfx_sword_att1` (vol 0.6)
-- `_onStateEnter('attack2_startup')` → plays `sfx_sword_att2` (vol 0.7)
-- `_onStateEnter('air_attack_startup')` → plays `sfx_sword_air` (vol 0.55)
+### Prompt
+- Shows "NAME  ◆ TALK (J)" at bottom-center of screen when player is within 60px
+- Pulsing alpha tween (1 ↔ 0.5, 800ms sine) matching Bench prompt pattern
+- Hidden when player walks away
 
-### Enemy.js (base class)
-- `takeDamage()` → plays `sfx_enemy_hurt` (vol 0.65, detuned)
-- `die()` → plays `sfx_enemy_death` (vol 0.7, detuned)
+### Dialogue UI
+- Dark semi-transparent box (#0A0A1A at 85% alpha) at bottom of screen, 500×100
+- Border in teal (#2EC4B6) at 50% alpha
+- Name in cyan (#7FE0DE) at top of box
+- Dialogue text in white (#c8d8ff) below, word-wrapped at 470px
+- ▼ indicator at bottom-right, changes to ◆ CLOSE (J) on last line
+- Typewriter effect: one character every 30ms
+- J during typing → completes line immediately
 
-### BossMafuyu.js
-- `takeDamage()` → plays `sfx_boss_hit` (vol 0.6, detuned)
-- `_die()` → plays `sfx_boss_death` (vol 0.75) → 1.2s delay → `sfx_combo_victory` (vol 0.6)
-- `_startPhaseTransition()` → fades out Phase 1 BGM (1.5s), starts Phase 2 BGM with fade-in (1.5s)
-- `_onBossStateEnter('melee_telegraph')` → plays `sfx_boss_roar` (vol 0.55, rate 1.15 in Phase 2)
+### Dialogue State
+- `isTalking` / `isTyping` flags managed per NPC
+- `advanceDialogue()` returns `true` when dialogue reaches end
+- `reset()` resets index to 0 when player walks away (only if not mid-conversation)
 
-### MenuScene.js
-- `create()` → starts `bgm_menu` (loop, fade in 1s to vol 0.35)
-- `_navigate()` → plays `sfx_ui_navigate` (vol 0.4)
-- `_confirmItem()` → plays `sfx_ui_confirm` (vol 0.5)
-- `_startNewGame()` → plays `sfx_ui_start` (vol 0.55), fades BGM out (0.5s)
+### GameScene Integration
+- `_createNPCs()` spawns two NPCs:
+  - Wanderer (???): x=800, y=530 — 3 melancholic lines about "her"
+  - K: x=2500, y=530 — 3 poetic lines foreshadowing boss fight
+- `_getNearbyNPC()` — circular proximity check, returns first matching NPC or null
+- Dialogue freezes gameplay (early return in update) — player, enemies, items paused
+- `_attackHandlerJ` / `_attackHandlerZ` both check `isTalking` and `_getNearbyNPC()` to prevent attacking while near NPCs
+- NPC prompt takes priority over bench prompt (bench hidden when NPC nearby)
+- NPC cleanup in shutdown handler
 
-### GameScene.js
-- `create()` → starts `bgm_explore` (loop, fade in 1s to vol 0.30)
-- `_startBossBattle()` → pauses exploration BGM
-- `_onBossResult()` → resumes exploration BGM
-- `_onPlayerHitEnemy()` → plays `sfx_combo_hit` when combo ≥ 2
-
-### BossScene.js
-- `create()` → starts `bgm_boss_p1` (loop, fade in 1s to vol 0.40)
-- `_onPlayerHitBoss()` → plays `sfx_combo_hit` when combo ≥ 2
-- `onBossDefeated()` → stops + destroys both BGM references
-- `_handlePlayerDeath()` → stops + destroys both BGM references
-
-## Key Decisions Made
-- BGM uses `this.sound.add()` with explicit `play()` / `pause()` / `resume()` / `stop()` for precise lifecycle control
-- BGM fades in on scene start (1s) to avoid abrupt audio
-- SFX uses `this.sound.play()` (one-shot) with volume and optional detune/rate for variety
-- Enemy hurt/death SFX uses `detune` randomization for organic feel
-- Boss Phase 2 roar uses `rate: 1.15` for higher pitch / urgency
-- Combo SFX triggered from scene layer (not HUD) to keep HUD focused on display-only
-- Boss BGM crossfade: Phase 1 fades out over 1.5s, Phase 2 fades in over 1.5s with 800ms overlap delay
-- Audio Design Document aligns with existing `design/` workflow
+### Design Patterns Followed
+- Proximity + prompt pulsing: Same as `Bench.js`
+- Input suppression: Same `isTalking` flag pattern as `isResting`
+- Dialogue advancement via `JustDown(this.keys.attack)` in update loop
+- All UI uses `setScrollFactor(0)` and depth 200+ for overlay appearance
 
 ## Next Steps (Future Polish)
-- Add ducking: lower BGM volume by −6 dB when `sfx_player_hurt` plays
-- Add Feelings gain SFX (trigger when player.feelings crosses 50/100 thresholds)
-- Add Audio Settings menu (master / BGM / SFX volume sliders)
-- Replace placeholder `sfx_sword_att1/att2` with more distinct chiptune variants
-- Spatial pan based on entity X position vs player
-- Sync hit-stop frames with audio for impact feel
+- Add sound effects for NPC interaction (talk open, advance, close)
+- Add floating dialogue indicator above NPC head
+- Add NPC sprite animation (idle bob)
+- Add branching dialogue support (conditional responses based on player state)
+- Integrate with save system (NPCs already available to talk, no save needed)
 
 ## Dependencies
-- Upstream: None (all audio files sourced and organized in previous session)
-- Downstream: All 8 game files modified with audio — ready for testing
+- Upstream: `Bench.js` pattern (proximity + prompt), `Player.js` state management
+- Downstream: None (self-contained system)

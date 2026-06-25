@@ -365,6 +365,7 @@ class PauseMenu {
                 if (event) event.preventDefault();
                 return;
             }
+            this._tryPlaySound('sfx_ui_navigate', 0.25);
             if (this.isOpen) {
                 this._close();
             } else {

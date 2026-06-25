@@ -21,16 +21,26 @@ class GameScene extends Phaser.Scene {
         this._createBackground();
         this._createPlatforms();
         this._createPlayer();
+        this._createOneWayDoors();
         this._createBossTrigger();
         this._createEnemies();
         this._createBenches();
+        this._createNPCs();
+        this._createCollectibles();
         this._createInput();
         this._createCamera();
 
         this.hud = new HUD(this);
         this.bossActive = false;
         this.isResting = false;
+        this.isTalking = false;
+        this.talkingNPC = null;
+        this.npcs = [];
         this.enemiesKilled = [];
+        this.collectedPersistentItems = [];
+        this.abilityItemsCollected = [];
+        this.abilityItems = [];
+        this.abilityGates = [];
 
         // Pause menu (ESC to toggle)
         this.pauseMenu = new PauseMenu(this);
@@ -53,10 +63,29 @@ class GameScene extends Phaser.Scene {
         // Listen for overlay (BossScene) results
         this._setupOverlayListener();
 
+        // Listen for player death — stop BGM
+        this._deathBgmStopped = false;
+        this.events.on('player-died', () => {
+            if (this._deathBgmStopped) return;
+            this._deathBgmStopped = true;
+            if (this.bgm && this.bgm.isPlaying) {
+                this.tweens.add({
+                    targets: this.bgm,
+                    volume: 0,
+                    duration: 800,
+                    onComplete: () => { this.bgm.stop(); this.bgm.destroy(); this.bgm = null; },
+                });
+            }
+        });
+
         // Apply save data if loading from CONTINUE
         if (this.loadSaveData) {
             this._applySaveData(this.loadSaveData);
         }
+
+        // Ability items & gates (after save data so collected/unlocked state is known)
+        this._createAbilityItems();
+        this._createAbilityGates();
     }
 
     /** Register listener for overlay scene results with automatic cleanup. */
@@ -82,7 +111,7 @@ class GameScene extends Phaser.Scene {
 
         if (result.victory) {
             this.player.heal(30);
-            this.player.feelings = Math.min(100, this.player.feelings + 20);
+            this.player.feelings = Math.min(this.player.feelingsMax, this.player.feelings + 20);
         }
         if (result.playerDied) {
             this.player.feelings = 0;
@@ -100,7 +129,9 @@ class GameScene extends Phaser.Scene {
         this.platforms = this.physics.add.staticGroup();
 
         const groundY = 568;
-        this._createPlatformRun(0, groundY + 18, Math.ceil(this.WORLD_W / 64));
+        // Ground — split: drop-down shortcut hole at x=2368–2432
+        this._createPlatformRun(0, groundY + 18, 37);   // x=0 to x=2368
+        this._createPlatformRun(2432, groundY + 18, 31); // x=2432 to x=4416
 
         const platPositions = [
             // ── Section 1: Intro (0–600) ──────────────────────────────
@@ -133,6 +164,17 @@ class GameScene extends Phaser.Scene {
             { x: 2368, y: 399, w: 4 },  // mid-wide platform
             { x: 2624, y: 319, w: 3 },  // high platform
 
+            // ── Drop-down shortcut landing (below hole at x=2400) ─────
+            { x: 2368, y: 510, w: 3 },   // landing platform under the hole
+
+            // ── Vertical shaft (x=2800) ──────────────────────────────
+            // Requires double jump to climb — gap from step 1 surface
+            // (y=482) to step 2 surface (y=302) is 180px > 160px max jump.
+            { x: 2688, y: 500, w: 2 },   // shaft step 1 (bottom left)
+            { x: 2816, y: 320, w: 2 },   // shaft step 2 (mid right, needs double jump)
+            { x: 2688, y: 260, w: 2 },   // shaft step 3 (top left)
+            { x: 2816, y: 240, w: 2 },   // shaft top — collectible platform
+
             // ── Section 5: Pre-Boss Gauntlet (2800–3800) ──────────────
             // Highest enemy density, requires both combat and platforming
             { x: 2880, y: 429, w: 3 },  // pre-boss low
@@ -142,6 +184,10 @@ class GameScene extends Phaser.Scene {
 
             // ── Section 6: Boss Rest Area (3800–4400) ─────────────────
             { x: 3840, y: 429, w: 3 },  // rest platform before boss room
+
+            // ── Boss second entrance (high route) ─────────────────────
+            // Requires double jump to reach; bypasses the dash gate at x=3500
+            { x: 3776, y: 300, w: 4 },   // high route from x=3776 to x=4032
         ];
 
         platPositions.forEach(p => this._createPlatformRun(p.x, p.y, p.w));
@@ -161,6 +207,43 @@ class GameScene extends Phaser.Scene {
         const collider = this.add.zone(x + width / 2, centerY, width, tileH);
         this.physics.add.existing(collider, true);
         this.platforms.add(collider);
+    }
+
+    _createOneWayDoors() {
+        // One-way door at x=1600: blocks left→right movement
+        // while allowing right→left (player can exit SECRET alcove
+        // but cannot re-enter from the ground path below).
+        const dx = 1600;
+        const dh = 340; // tall enough to block jump-over attempts
+        const dy = 390; // center y: covers y=220 to y=560
+
+        // Visual — dark barrier with teal glow (25-ji aesthetic)
+        const gfx = this.add.graphics().setDepth(20);
+        gfx.fillStyle(0x2d3561, 0.8);
+        gfx.fillRect(dx - 3, dy - dh / 2, 6, dh);
+        gfx.lineStyle(1.5, 0x7FE0DE, 0.4);
+        gfx.strokeRect(dx - 3, dy - dh / 2, 6, dh);
+        gfx.lineStyle(1, 0x7FE0DE, 0.15);
+        gfx.lineBetween(dx, dy - dh / 2, dx, dy + dh / 2);
+
+        // Physics zone (static body)
+        this.oneWayDoorZone = this.add.zone(dx, dy, 6, dh);
+        this.physics.add.existing(this.oneWayDoorZone, true);
+
+        // Collider with direction-based process callback
+        this.physics.add.collider(
+            this.player.sprite,
+            this.oneWayDoorZone,
+            null,
+            (playerSprite, zone) => {
+                // Block left→right; allow right→left and all other cases
+                if (playerSprite.x < zone.x && playerSprite.body.velocity.x > 0) {
+                    return true; // collide (block movement)
+                }
+                return false; // pass through freely
+            },
+            this,
+        );
     }
 
     _createPlayer() {
@@ -200,6 +283,13 @@ class GameScene extends Phaser.Scene {
             { id: 'fl_2',  type: 'floating', x: 2200, y: 250, noGravity: true },
             { id: 'fl_3',  type: 'floating', x: 3300, y: 200, noGravity: true },
             { id: 'fl_4',  type: 'floating', x: 3700, y: 260, noGravity: true },
+            // ── Skeletons ──
+            { id: 'sk_0',  type: 'skeleton', x: 2000, y: 530 },
+            { id: 'sk_1',  type: 'skeleton', x: 3500, y: 530 },
+            // ── Bats ──
+            { id: 'bat_0', type: 'bat', x: 900,  y: 300, noGravity: true },
+            { id: 'bat_1', type: 'bat', x: 2100, y: 250, noGravity: true },
+            { id: 'bat_2', type: 'bat', x: 3300, y: 200, noGravity: true },
         ];
 
         // Which spawn IDs are already killed (from save data)?
@@ -242,6 +332,10 @@ class GameScene extends Phaser.Scene {
                 enemy = new ShadowFragment(this, spawn.x, spawn.y);
             } else if (spawn.type === 'floating') {
                 enemy = new FloatingShard(this, spawn.x, spawn.y);
+            } else if (spawn.type === 'bat') {
+                enemy = new Bat(this, spawn.x, spawn.y);
+            } else if (spawn.type === 'skeleton') {
+                enemy = new Skeleton(this, spawn.x, spawn.y);
             }
             if (enemy) {
                 enemy.spawnId = spawn.id;
@@ -285,7 +379,7 @@ class GameScene extends Phaser.Scene {
 
         // Kill bonus Feelings + tracking
         if (enemy.dead && enemy.feelingsDrop > 0) {
-            this.player.feelings = Math.min(100, this.player.feelings + enemy.feelingsDrop);
+            this.player.feelings = Math.min(this.player.feelingsMax, this.player.feelings + enemy.feelingsDrop);
         }
         if (enemy.dead && enemy.spawnId) {
             if (!this.enemiesKilled.includes(enemy.spawnId)) {
@@ -333,7 +427,9 @@ class GameScene extends Phaser.Scene {
         SceneManager.launchOverlay(this, 'BossScene', {
             playerData: {
                 hp: this.player.hp,
+                maxHp: this.player.maxHp,
                 feelings: this.player.feelings,
+                feelingsMax: this.player.feelingsMax,
                 abilities: { ...this.player.abilities },
             },
         });
@@ -356,17 +452,21 @@ class GameScene extends Phaser.Scene {
         this._attackHandlerJ = () => {
             if (this.pauseMenu && this.pauseMenu.isPaused) return;
             if (this.isResting) return;
+            if (this.isTalking) return;
             if (this.player && !this.bossActive) {
-                // Don't attack while near a bench — J is "rest" there
+                // Don't attack while near a bench or NPC — J is "rest" / "talk" there
                 if (this._getNearbyBench()) return;
+                if (this._getNearbyNPC()) return;
                 this.player.attackPressed();
             }
         };
         this._attackHandlerZ = () => {
             if (this.pauseMenu && this.pauseMenu.isPaused) return;
             if (this.isResting) return;
+            if (this.isTalking) return;
             if (this.player && !this.bossActive) {
                 if (this._getNearbyBench()) return;
+                if (this._getNearbyNPC()) return;
                 this.player.attackPressed();
             }
         };
@@ -376,6 +476,7 @@ class GameScene extends Phaser.Scene {
         this.events.once('shutdown', () => {
             this.input.keyboard.off('keydown-J', this._attackHandlerJ);
             this.input.keyboard.off('keydown-Z', this._attackHandlerZ);
+            if (this.npcs) this.npcs.forEach(n => n.destroy());
         });
     }
 
@@ -384,6 +485,66 @@ class GameScene extends Phaser.Scene {
         this.cameras.main.startFollow(this.player.sprite, true, 0.1, 0.1);
         this.cameras.main.setDeadzone(100, 50);
         this.cameras.main.setBackgroundColor('#0a0a1a');
+    }
+
+    /* ================================================================== */
+    /*  Ability items & gates                                              */
+    /* ================================================================== */
+
+    /**
+     * Spawn ability pickup items in the world.
+     * Skips any that are already in this.abilityItemsCollected (from save).
+     */
+    _createAbilityItems() {
+        const itemDefs = [
+            {
+                x: 2000, y: 480,
+                key: 'dash',
+                name: 'DASH',
+            },
+            {
+                x: 3200, y: 320,
+                key: 'doubleJump',
+                name: 'DOUBLE JUMP',
+            },
+        ];
+
+        itemDefs.forEach(def => {
+            // Skip if already collected (from save data)
+            if (this.abilityItemsCollected.includes(def.key)) return;
+
+            const item = new AbilityItem(this, def.x, def.y, def.key, def.name);
+            this.abilityItems.push(item);
+        });
+    }
+
+    /**
+     * Spawn ability gates that block passage until the player has an ability.
+     * If the player already has the required ability (from save data),
+     * the gate is not created (the constructor handles instant unlock).
+     */
+    _createAbilityGates() {
+        // Ground surface top at y=550.  Gates sit on the ground (center = 550 - 18 = 532,
+        // but we use 542 so the gate sits nicely above the ground collider).
+        const groundY = 542;
+
+        const gateDefs = [
+            // Gate 1: blocks mid-game passage, requires dash
+            { x: 1800, y: groundY, w: 24, h: 36, key: 'dash' },
+            // Gate 2: blocks high-platform shortcut, requires double jump
+            { x: 2800, y: 360,    w: 24, h: 36, key: 'doubleJump' },
+            // Gate 3: blocks pre-boss shortcut, requires dash
+            { x: 3500, y: groundY, w: 24, h: 36, key: 'dash' },
+        ];
+
+        gateDefs.forEach(def => {
+            // If player already has the ability, skip creation entirely
+            // (AbilityGate constructor handles it too, but this avoids wasted objects)
+            if (this.player.abilities[def.key]) return;
+
+            const gate = new AbilityGate(this, def.x, def.y, def.w, def.h, def.key);
+            this.abilityGates.push(gate);
+        });
     }
 
     update(time, delta) {
@@ -395,6 +556,21 @@ class GameScene extends Phaser.Scene {
         }
 
         if (this.pauseMenu.isPaused || this.scene.isPaused()) return;
+
+        // ---- NPC dialogue (freezes gameplay while talking) ----
+        if (this.isTalking && this.talkingNPC) {
+            if (Phaser.Input.Keyboard.JustDown(this.keys.attack)) {
+                const closed = this.talkingNPC.advanceDialogue();
+                if (closed) {
+                    this.isTalking = false;
+                    this.talkingNPC = null;
+                }
+            }
+            this.talkingNPC.update(delta);
+            this.hud.drawPips(this.player.hp, this.player.maxHp);
+            this.hud.drawFeelings(this.player.feelings, this.player.feelingsMax);
+            return;
+        }
 
         // ---- Bench interaction check ----
         if (!this.isResting && !this.player.dead) {
@@ -410,6 +586,29 @@ class GameScene extends Phaser.Scene {
             }
         }
 
+        // ---- NPC proximity & interaction ----
+        if (!this.isResting && !this.player.dead) {
+            const nearbyNPC = this._getNearbyNPC();
+            if (nearbyNPC) {
+                // Prioritise NPC prompt over bench prompt
+                const nearbyBench = this._getNearbyBench();
+                if (nearbyBench) nearbyBench.showPrompt(false);
+
+                nearbyNPC.showPrompt(true);
+                if (Phaser.Input.Keyboard.JustDown(this.keys.attack)) {
+                    this.talkingNPC = nearbyNPC;
+                    this.isTalking = true;
+                    nearbyNPC.showPrompt(false);
+                    nearbyNPC.startDialogue();
+                }
+            } else {
+                this.npcs.forEach(n => {
+                    n.showPrompt(false);
+                    n.reset();
+                });
+            }
+        }
+
         this.player.update(delta);
 
         // Update enemies (filter out dead ones)
@@ -418,8 +617,15 @@ class GameScene extends Phaser.Scene {
             if (!e.dead) e.update(delta, this.player.x, this.player.y);
         });
 
-        this.hud.drawPips(this.player.hp);
-        this.hud.drawFeelings(this.player.feelings);
+        // Update ability items & gates
+        this.abilityItems = this.abilityItems.filter(item => !item.collected);
+        this.abilityItems.forEach(item => item.update(time));
+
+        this.abilityGates = this.abilityGates.filter(gate => !gate.unlocked);
+        this.abilityGates.forEach(gate => gate.update(time));
+
+        this.hud.drawPips(this.player.hp, this.player.maxHp);
+        this.hud.drawFeelings(this.player.feelings, this.player.feelingsMax);
         this._updateBackground();
     }
 
@@ -440,6 +646,34 @@ class GameScene extends Phaser.Scene {
         ];
     }
 
+    /* ================================================================== */
+    /*  NPC system                                                           */
+    /* ================================================================== */
+
+    /** Create NPC instances at fixed positions across the world. */
+    _createNPCs() {
+        this.npcs = [
+            new NPC(this, 800, 530, {
+                name: '???',
+                dialogues: [
+                    'The echoes in this place... they sound like her voice.',
+                    'She left something behind. I can feel it.',
+                    "You're looking for her too, aren't you?",
+                ],
+                hairColor: 0x4A4A6A, // dark purple-gray — mysterious
+            }),
+            new NPC(this, 2500, 530, {
+                name: 'K',
+                dialogues: [
+                    "I've been watching you. You carry her sword well.",
+                    'The door ahead requires resolve. Not just strength.',
+                    "When you face her... remember that she's also facing herself.",
+                ],
+                hairColor: 0x2EC4B6, // teal — matches 25-ji accent
+            }),
+        ];
+    }
+
     /**
      * Return the nearest bench whose interaction zone contains the player,
      * or null if none are nearby.
@@ -450,6 +684,21 @@ class GameScene extends Phaser.Scene {
         for (let i = 0; i < this.benches.length; i++) {
             if (this.benches[i].isPlayerNearby(this.player.x, this.player.y)) {
                 return this.benches[i];
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Return the nearest NPC whose interaction zone contains the player,
+     * or null if none are nearby.
+     * @returns {NPC|null}
+     */
+    _getNearbyNPC() {
+        if (!this.player || !this.npcs) return null;
+        for (let i = 0; i < this.npcs.length; i++) {
+            if (this.npcs[i].isPlayerNearby(this.player.x, this.player.y)) {
+                return this.npcs[i];
             }
         }
         return null;
@@ -485,7 +734,7 @@ class GameScene extends Phaser.Scene {
             onComplete: () => {
                 // Full restore
                 this.player.heal(this.player.maxHp);
-                this.player.feelings = 100;
+                this.player.feelings = this.player.feelingsMax;
                 this.player.sprite.setAlpha(1);
                 this.player.body.setAllowGravity(true);
 
@@ -494,6 +743,8 @@ class GameScene extends Phaser.Scene {
 
                 // Reset all enemies (before save so save has clean state)
                 this._resetEnemies();
+                // Reset non-persistent collectibles (health orbs respawn, items stay)
+                this._resetCollectibles();
 
                 // Save game
                 this._saveGame();
@@ -540,6 +791,7 @@ class GameScene extends Phaser.Scene {
             hp: this.player.hp,
             maxHp: this.player.maxHp,
             feelings: this.player.feelings,
+            feelingsMax: this.player.feelingsMax,
             scene: 'GameScene',
             playerX: this.player.x,
             playerY: this.player.y,
@@ -548,6 +800,8 @@ class GameScene extends Phaser.Scene {
                 .filter(b => b.usedCount > 0)
                 .map(b => b.x),
             enemiesKilled: [...this.enemiesKilled],
+            collectedItems: [...this.collectedPersistentItems],
+            abilityItemsCollected: [...this.abilityItemsCollected],
         };
         try {
             localStorage.setItem('sekai_save', JSON.stringify(data));
@@ -581,6 +835,16 @@ class GameScene extends Phaser.Scene {
                 b.usedCount++;
             }
         });
+
+        // Track already-collected ability items (prevents re-spawn on scene restart)
+        if (data.abilityItemsCollected) {
+            this.abilityItemsCollected = data.abilityItemsCollected;
+        }
+
+        // Track already-collected persistent items (HP fragments, Feelings shards)
+        if (data.collectedItems) {
+            this.collectedPersistentItems = data.collectedItems;
+        }
     }
 
     /* ================================================================== */
@@ -604,6 +868,109 @@ class GameScene extends Phaser.Scene {
 
         // Recreate from spawn definitions
         this._spawnFromSpawns([]);
+    }
+
+    /* ================================================================== */
+    /*  Collectible items                                                    */
+    /* ================================================================== */
+
+    /** Spawn collectible items at fixed positions across the world. */
+    _createCollectibles() {
+        this.collectibles = [];
+
+        // All spawn definitions
+        this.collectibleSpawns = [
+            // ── Persistent items (saved — do NOT respawn on bench rest) ──
+            // HP Fragment 1: secret alcove
+            { type: 'hp_up',      saveId: 'hp_1',   x: 1472, y: 140, value: 10 },
+            // HP Fragment 2: pre-boss area high platform
+            { type: 'hp_up',      saveId: 'hp_2',   x: 3800, y: 300, value: 10 },
+            // Feelings Shard 1: mid-corridor
+            { type: 'feelings_up', saveId: 'feel_1', x: 2200, y: 340, value: 50 },
+            // Feelings Shard 2: upper branch
+            { type: 'feelings_up', saveId: 'feel_2', x: 1300, y: 170, value: 50 },
+            // HP Fragment 3: vertical shaft top
+            { type: 'hp_up', saveId: 'hp_3', x: 2880, y: 220, value: 10 },
+
+            // ── Non-persistent items (respawn on bench rest) ────────────
+            { type: 'health', saveId: 'health_1', x: 500,  y: 500, value: 30, persistent: false },
+            { type: 'health', saveId: 'health_2', x: 900,  y: 500, value: 30, persistent: false },
+            { type: 'health', saveId: 'health_3', x: 1700, y: 400, value: 30, persistent: false },
+            { type: 'health', saveId: 'health_4', x: 2500, y: 500, value: 30, persistent: false },
+            { type: 'health', saveId: 'health_5', x: 3100, y: 500, value: 30, persistent: false },
+            { type: 'health', saveId: 'health_6', x: 3600, y: 360, value: 30, persistent: false },
+        ];
+
+        // Filter out already-collected persistent items
+        const skipIds = this.collectedPersistentItems || [];
+
+        this.collectibleSpawns.forEach(sp => {
+            // Skip persistent items that were already collected
+            if (sp.persistent !== false && skipIds.includes(sp.saveId)) return;
+            const c = new Collectible(this, sp.x, sp.y, sp);
+            this.collectibles.push(c);
+        });
+
+        this._setupCollectibleOverlap();
+    }
+
+    /** Set up physics overlap between player and collectible items. */
+    _setupCollectibleOverlap() {
+        this.collectibleGroup = this.physics.add.group();
+        this.collectibles.forEach(c => {
+            if (c.sprite) {
+                this.collectibleGroup.add(c.sprite);
+            }
+        });
+
+        this.physics.add.overlap(
+            this.player.sprite,
+            this.collectibleGroup,
+            (playerSprite, collectibleSprite) => {
+                const c = collectibleSprite.collectibleRef;
+                if (c && !c.collected) {
+                    c.pickup(this.player);
+                    this._onCollectiblePicked(c);
+                }
+            },
+        );
+    }
+
+    /**
+     * Called after a collectible is picked up.
+     * Tracks persistent item IDs for save data.
+     * @param {Collectible} collectible
+     */
+    _onCollectiblePicked(collectible) {
+        if (collectible.persistent !== false && collectible.saveId) {
+            if (!this.collectedPersistentItems.includes(collectible.saveId)) {
+                this.collectedPersistentItems.push(collectible.saveId);
+            }
+        }
+    }
+
+    /**
+     * Reset collectibles on bench rest.
+     * Destroys all existing collectible sprites, then respawns
+     * non-persistent ones (health orbs). Persistent items stay collected.
+     */
+    _resetCollectibles() {
+        // Destroy all active collectibles
+        this.collectibles.forEach(c => c.destroy());
+        this.collectibles = [];
+        if (this.collectibleGroup) {
+            this.collectibleGroup.clear(true, true);
+        }
+
+        // Respawn from definitions — persistent ones are filtered out
+        const skipIds = this.collectedPersistentItems || [];
+        this.collectibleSpawns.forEach(sp => {
+            if (sp.persistent !== false && skipIds.includes(sp.saveId)) return;
+            const c = new Collectible(this, sp.x, sp.y, sp);
+            this.collectibles.push(c);
+        });
+
+        this._setupCollectibleOverlap();
     }
 
     _updateBackground() {

@@ -26,6 +26,7 @@ class Player {
         this.hp = 100;
         this.maxHp = 100;
         this.feelings = 0;
+        this.feelingsMax = 100;
         this.jumpCount = 0;
         this.comboCount = 0;
         this.comboTimer = 0;
@@ -33,7 +34,7 @@ class Player {
         this.invulnTimer = 0;
         this.bufferAttack = -1;
 
-        this.abilities = { dash: true, doubleJump: true, shadowCloak: false };
+        this.abilities = { dash: false, doubleJump: false, shadowCloak: false };
         this.dashUsedThisJump = false;
         this.dashCooldownTimer = 0;
 
@@ -106,9 +107,11 @@ class Player {
         if (this.invulnTimer > 0 || this.dead || this.state === 'dashing') return;
         this.hp -= amount;
         this.invulnTimer = 60;  // 1s invincibility (60 frames @ 60fps)
-        this.feelings = Math.min(100, this.feelings + 5);
+        this.feelings = Math.min(this.feelingsMax, this.feelings + 5);
         this.feelingsTimer = 0;
         this.sprite.setTint(0xff6666);
+        this.scene.cameras.main.shake(80, 0.005);
+        this._spawnHurtParticles();
         this.scene.time.delayedCall(100, () => {
             if (!this.dead) this.sprite.clearTint();
         });
@@ -132,13 +135,77 @@ class Player {
         this.sprite.setVelocity(0, 0);
         this.sprite.body.setAllowGravity(false);
         this.scene.sound.play('sfx_player_death', { volume: 0.8 });
-        this.scene.tweens.add({
-            targets: this.sprite,
-            alpha: 0,
-            duration: 1500,
-            ease: 'Power2',
+
+        const scene = this.scene;
+        const sprite = this.sprite;
+
+        // Step 1 (0ms): player_down + red tint
+        sprite.setTexture('player_down');
+        sprite.setTint(0xff0000);
+        sprite.setAlpha(1);
+        // Reset scale to base in case of leftover from previous death
+        sprite.setScale(0.12);
+
+        // Step 2 (500ms): tween tint red→white, squash scale 1.0→0.9
+        scene.time.delayedCall(500, () => {
+            if (!this.dead) return; // safety: player revived mid-animation
+            // Tint from red (0xff0000) to white (0xffffff) using counter tween
+            scene.tweens.addCounter({
+                from: 0,
+                to: 255,
+                duration: 300,
+                ease: 'Sine.easeOut',
+                onUpdate: (tween) => {
+                    if (!sprite.active) return;
+                    const v = Math.round(tween.getValue());
+                    sprite.setTint(Phaser.Display.Color.GetColor(255, v, v));
+                },
+            });
+            // Squash: scale 0.12 → 0.108 (0.9×)
+            scene.tweens.add({
+                targets: sprite,
+                scaleX: 0.12 * 0.9,
+                scaleY: 0.12 * 0.9,
+                duration: 300,
+                ease: 'Power2',
+            });
         });
-        // Scene (e.g., BossScene) handles death transitions �?no auto-restart here
+
+        // Step 3 (800ms): vanish1, alpha 0.9
+        scene.time.delayedCall(800, () => {
+            if (!this.dead) return;
+            if (scene.textures.exists('player_vanish1')) {
+                sprite.setTexture('player_vanish1');
+            }
+            sprite.setAlpha(0.9);
+        });
+
+        // Step 4 (1100ms): vanish2, alpha 0.6
+        scene.time.delayedCall(1100, () => {
+            if (!this.dead) return;
+            if (scene.textures.exists('player_vanish2')) {
+                sprite.setTexture('player_vanish2');
+            }
+            sprite.setAlpha(0.6);
+        });
+
+        // Step 5 (1400ms): vanish3, alpha 0.3
+        scene.time.delayedCall(1400, () => {
+            if (!this.dead) return;
+            if (scene.textures.exists('player_vanish3')) {
+                sprite.setTexture('player_vanish3');
+            }
+            sprite.setAlpha(0.3);
+        });
+
+        // Step 6 (1700ms): alpha 0, disable sprite
+        scene.time.delayedCall(1700, () => {
+            if (!this.dead) return;
+            sprite.setAlpha(0);
+            sprite.setActive(false);
+        });
+
+        // Scene (e.g., BossScene) handles death transitions → no auto-restart here
     }
 
     heal(amount) {
@@ -499,6 +566,32 @@ class Player {
         });
     }
 
+    _spawnHurtParticles() {
+        const count = 3;
+        for (let i = 0; i < count; i++) {
+            const angle = (Math.PI * 2 * i) / count + Phaser.Math.FloatBetween(-0.3, 0.3);
+            const dist = Phaser.Math.Between(30, 50);
+            const p = this.scene.add.circle(
+                this.sprite.x + Phaser.Math.Between(-8, 8),
+                this.sprite.y + Phaser.Math.Between(-8, 8),
+                Phaser.Math.Between(2, 4),
+                0xff3333,
+                0.9
+            );
+            p.setDepth(20);
+            this.scene.tweens.add({
+                targets: p,
+                x: p.x + Math.cos(angle) * dist,
+                y: p.y + Math.sin(angle) * dist,
+                alpha: 0,
+                scale: 0.2,
+                duration: 400,
+                ease: 'Power2',
+                onComplete: () => p.destroy(),
+            });
+        }
+    }
+
     _enterState(newState) {
         if (this.state === newState) return;
         this.state = newState;
@@ -667,7 +760,7 @@ class Player {
         this.comboCount++;
         this.comboTimer = 2000;
         this.feelingsTimer = 0;
-        this.feelings = Math.min(100, this.feelings + 8);
+        this.feelings = Math.min(this.feelingsMax, this.feelings + 8);
     }
 
     /* ------------------------------------------------------------------ */
@@ -680,6 +773,7 @@ class Player {
             hp: this.hp,
             maxHp: this.maxHp,
             feelings: this.feelings,
+            feelingsMax: this.feelingsMax,
             abilities: { ...this.abilities },
         };
     }
@@ -693,6 +787,7 @@ class Player {
         if (data.hp !== undefined) this.hp = Math.min(data.hp, this.maxHp);
         if (data.maxHp !== undefined) this.maxHp = data.maxHp;
         if (data.feelings !== undefined) this.feelings = data.feelings;
+        if (data.feelingsMax !== undefined) this.feelingsMax = data.feelingsMax;
         if (data.abilities) {
             this.abilities.dash = !!data.abilities.dash;
             this.abilities.doubleJump = !!data.abilities.doubleJump;
@@ -701,13 +796,15 @@ class Player {
     }
 
     reset(x, y, hp = this.maxHp) {
+        // Preserve earned traversal abilities (they persist through death)
+        const savedAbilities = { ...this.abilities };
         this.hp = hp;
         this.feelings = 0;
         this.feelingsTimer = 3001;
         this.dead = false;
         this.jumpCount = 0;
         this.state = 'idle';
-        this.abilities = { dash: true, doubleJump: true, shadowCloak: false };
+        this.abilities = savedAbilities;
         this.dashUsedThisJump = false;
         this.dashCooldownTimer = 0;
         this.offGroundFrames = 0;
@@ -717,6 +814,7 @@ class Player {
         this.isAirborneStable = false;
         this.sprite.setAlpha(1);
         this.sprite.clearTint();
+        this.sprite.setScale(0.12);
         if (this.sprite.anims && this.sprite.anims.isPlaying) {
             this.sprite.anims.stop();
         }

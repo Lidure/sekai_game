@@ -2,14 +2,14 @@ class HUD {
     constructor(scene) {
         this.scene = scene;
 
-        this.pipCount = 10;
         this.pipSize = 14;
         this.pipGap = 4;
         this.pipX = 20;
         this.pipY = 20;
 
         this.heartContainers = [];
-        for (let i = 0; i < this.pipCount; i++) {
+        // Pre-allocate enough containers for max possible HP (150 max / 10 = 15)
+        for (let i = 0; i < 15; i++) {
             const g = scene.add.graphics().setScrollFactor(0).setDepth(100);
             this.heartContainers.push(g);
         }
@@ -40,6 +40,13 @@ class HUD {
 
         this.comboTween = null;
 
+        // Ability icons (bottom-right)
+        this.abilityGraphics = [];
+        for (let i = 0; i < 3; i++) {
+            const g = scene.add.graphics().setScrollFactor(0).setDepth(100);
+            this.abilityGraphics.push(g);
+        }
+
         this._layout();
     }
 
@@ -56,11 +63,22 @@ class HUD {
         this.comboText.setPosition(w / 2 + 80, this.scene.scale.height / 2 - 40);
     }
 
-    drawPips(hp) {
-        const maxHp = 100;
-        for (let i = 0; i < this.pipCount; i++) {
+    drawPips(hp, maxHp) {
+        if (maxHp === undefined) maxHp = 100;
+        const pipCount = Math.ceil(maxHp / 10);
+        // Ensure enough containers for dynamic maxHp
+        while (this.heartContainers.length < pipCount) {
+            const g = this.scene.add.graphics().setScrollFactor(0).setDepth(100);
+            this.heartContainers.push(g);
+        }
+        for (let i = 0; i < this.heartContainers.length; i++) {
             const g = this.heartContainers[i];
             g.clear();
+            if (i >= pipCount) {
+                g.setVisible(false);
+                continue;
+            }
+            g.setVisible(true);
             const pipHp = 10;
             const remaining = hp - i * pipHp;
             const x = this.pipX + i * (this.pipSize + this.pipGap);
@@ -140,7 +158,8 @@ class HUD {
         this.bossBarFill.setAlpha(0);
     }
 
-    drawFeelings(value) {
+    drawFeelings(value, maxValue) {
+        if (maxValue === undefined) maxValue = 100;
         const w = this.scene.scale.width;
         const barW = 140;
         const barH = 5;
@@ -151,7 +170,7 @@ class HUD {
         this.feelBg.fillStyle(0x1a1a2e, 0.8);
         this.feelBg.fillRoundedRect(bx, by, barW, barH, 2);
 
-        const pct = Phaser.Math.Clamp(value / 100, 0, 1);
+        const pct = Phaser.Math.Clamp(value / maxValue, 0, 1);
         this.feelFill.clear();
         if (pct > 0) {
             this.feelFill.fillStyle(0xa8d8ff, 1);
@@ -172,6 +191,87 @@ class HUD {
         });
     }
 
+    /* ================================================================== */
+    /*  Ability Icons                                                        */
+    /* ================================================================== */
+
+    /**
+     * Draw ability icons at the bottom-right of the screen.
+     * @param {{ dash: boolean, doubleJump: boolean, shadowCloak: boolean }} abilities
+     */
+    drawAbilities(abilities) {
+        if (!abilities) return;
+
+        const iconPositions = [
+            { x: 720, y: 540 },  // Dash — leftmost
+            { x: 742, y: 540 },  // Double Jump — middle
+            { x: 764, y: 540 },  // Shadow Cloak — rightmost
+        ];
+
+        const hasAbility = [
+            abilities.dash || false,
+            abilities.doubleJump || false,
+            abilities.shadowCloak || false,
+        ];
+
+        for (let i = 0; i < 3; i++) {
+            const g = this.abilityGraphics[i];
+            g.clear();
+            const { x, y } = iconPositions[i];
+
+            if (hasAbility[i]) {
+                this._drawAbilityIcon(g, i, x, y);
+            } else {
+                this._drawMissingAbilityIcon(g, x, y);
+            }
+        }
+    }
+
+    /** Draw a dim, locked ability icon. */
+    _drawMissingAbilityIcon(g, x, y) {
+        g.fillStyle(0x1a1a2e, 0.3);
+        g.fillRect(x, y, 16, 16);
+        g.lineStyle(1, 0x2d3561, 0.4);
+        g.strokeRect(x, y, 16, 16);
+    }
+
+    /** Draw an acquired ability icon with colour and glow. */
+    _drawAbilityIcon(g, index, x, y) {
+        switch (index) {
+            case 0: { // Dash — right-pointing arrow
+                g.fillStyle(0x2EC4B6, 0.15);
+                g.fillCircle(x + 8, y + 8, 10);
+                g.fillStyle(0x2EC4B6, 1);
+                g.fillRect(x + 3, y + 5, 8, 6);
+                g.fillTriangle(x + 10, y + 3, x + 10, y + 13, x + 15, y + 8);
+                break;
+            }
+            case 1: { // Double Jump — two stacked upward arrows
+                g.fillStyle(0x7FE0DE, 0.15);
+                g.fillCircle(x + 8, y + 8, 10);
+                g.fillStyle(0x7FE0DE, 1);
+                // Lower arrow
+                g.fillTriangle(x + 6, y + 10, x + 6, y + 15, x + 12, y + 12.5);
+                // Upper arrow
+                g.fillTriangle(x + 6, y + 3, x + 6, y + 8, x + 12, y + 5.5);
+                break;
+            }
+            case 2: { // Shadow Cloak — diamond / rhombus
+                g.fillStyle(0x9966ff, 0.15);
+                g.fillCircle(x + 8, y + 8, 10);
+                g.fillStyle(0x9966ff, 1);
+                g.beginPath();
+                g.moveTo(x + 8, y + 1);
+                g.lineTo(x + 15, y + 8);
+                g.lineTo(x + 8, y + 15);
+                g.lineTo(x + 1, y + 8);
+                g.closePath();
+                g.fillPath();
+                break;
+            }
+        }
+    }
+
     destroy() {
         this.heartContainers.forEach(g => g.destroy());
         this.bossName.destroy();
@@ -181,5 +281,6 @@ class HUD {
         this.feelBg.destroy();
         this.feelFill.destroy();
         this.comboText.destroy();
+        this.abilityGraphics.forEach(g => g.destroy());
     }
 }
