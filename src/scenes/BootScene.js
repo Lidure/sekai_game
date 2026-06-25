@@ -37,6 +37,7 @@ class BootScene extends Phaser.Scene {
         this.load.audio('sfx_player_jump',  'assets/audio/sfx/player/sfx_player_jump_01.wav');
         this.load.audio('sfx_player_hurt',  'assets/audio/sfx/player/sfx_player_hurt_01.wav');
         this.load.audio('sfx_player_death', 'assets/audio/sfx/player/player_death.mp3');
+        this.load.audio('sfx_player_dash',  'assets/audio/sfx/magic/magic_spell_fast.mp3');
 
         // Weapon SFX
         this.load.audio('sfx_sword_att1', 'assets/audio/sfx/sword/sword_synth_shing.mp3');

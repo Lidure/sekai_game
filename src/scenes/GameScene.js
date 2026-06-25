@@ -3,6 +3,15 @@ class GameScene extends Phaser.Scene {
         super('GameScene');
     }
 
+    /**
+     * Called before create() when the scene starts or restarts.
+     * Receives data passed from SceneManager.goTo() or scene.start().
+     * @param {object} data - May contain { loadSave: {...} } from CONTINUE.
+     */
+    init(data) {
+        this.loadSaveData = (data && data.loadSave) || null;
+    }
+
     create() {
         this.WORLD_W = 4400; // Expanded from 2400
         this.WORLD_H = 600;
@@ -14,14 +23,20 @@ class GameScene extends Phaser.Scene {
         this._createPlayer();
         this._createBossTrigger();
         this._createEnemies();
+        this._createBenches();
         this._createInput();
         this._createCamera();
 
         this.hud = new HUD(this);
         this.bossActive = false;
+        this.isResting = false;
+        this.enemiesKilled = [];
 
         // Pause menu (ESC to toggle)
         this.pauseMenu = new PauseMenu(this);
+
+        // Map overlay (M to toggle)
+        this.mapView = new MapView(this);
 
         // Audio — start exploration BGM
         this.bgm = this.sound.add('bgm_explore', { loop: true, volume: 0 });
@@ -37,6 +52,11 @@ class GameScene extends Phaser.Scene {
 
         // Listen for overlay (BossScene) results
         this._setupOverlayListener();
+
+        // Apply save data if loading from CONTINUE
+        if (this.loadSaveData) {
+            this._applySaveData(this.loadSaveData);
+        }
     }
 
     /** Register listener for overlay scene results with automatic cleanup. */
@@ -162,53 +182,35 @@ class GameScene extends Phaser.Scene {
     }
 
     _createEnemies() {
+        // Store spawn definitions for reset / save tracking
+        this.enemySpawns = [
+            // ── Shadow Fragments ──
+            { id: 'sf_0',  type: 'shadow',  x: 450,  y: 530 },
+            { id: 'sf_1',  type: 'shadow',  x: 1000, y: 530 },
+            { id: 'sf_2',  type: 'shadow',  x: 1250, y: 530 },
+            { id: 'sf_3',  type: 'shadow',  x: 1500, y: 530 },
+            { id: 'sf_4',  type: 'shadow',  x: 2000, y: 530 },
+            { id: 'sf_5',  type: 'shadow',  x: 2550, y: 530 },
+            { id: 'sf_6',  type: 'shadow',  x: 3050, y: 530 },
+            { id: 'sf_7',  type: 'shadow',  x: 3550, y: 530 },
+            { id: 'sf_8',  type: 'shadow',  x: 3900, y: 530 },
+            // ── Floating Shards ──
+            { id: 'fl_0',  type: 'floating', x: 700,  y: 220, noGravity: true },
+            { id: 'fl_1',  type: 'floating', x: 1100, y: 130, noGravity: true },
+            { id: 'fl_2',  type: 'floating', x: 2200, y: 250, noGravity: true },
+            { id: 'fl_3',  type: 'floating', x: 3300, y: 200, noGravity: true },
+            { id: 'fl_4',  type: 'floating', x: 3700, y: 260, noGravity: true },
+        ];
+
+        // Which spawn IDs are already killed (from save data)?
+        const killed = (this.loadSaveData && this.loadSaveData.enemiesKilled) || [];
+
         this.enemyInstances = [];
         this.enemyGroup = this.physics.add.group();
 
-        // ── Shadow Fragments — ground-based patrol/chase ──────────
-        // Distributed across all sections after the safe intro zone
-        const shadowPositions = [
-            // Section 2
-            { x: 450, y: 530 },
-            // Section 3 lower path
-            { x: 1000, y: 530 },
-            { x: 1250, y: 530 },
-            { x: 1500, y: 530 },
-            // Section 4
-            { x: 2000, y: 530 },
-            { x: 2550, y: 530 },
-            // Section 5
-            { x: 3050, y: 530 },
-            { x: 3550, y: 530 },
-            // Pre-boss guard
-            { x: 3900, y: 530 },
-        ];
-        shadowPositions.forEach(pos => {
-            const e = new ShadowFragment(this, pos.x, pos.y);
-            this.enemyGroup.add(e.sprite);
-            this.enemyInstances.push(e);
-        });
+        this._spawnFromSpawns(killed);
 
-        // ── Floating Shards — mid-air hover/drift ─────────────────
-        const shardPositions = [
-            // Section 2 — guards the ascent
-            { x: 700, y: 220 },
-            // Section 3 — upper branch guard (secret alcove approach)
-            { x: 1100, y: 130 },
-            // Section 4
-            { x: 2200, y: 250 },
-            // Section 5
-            { x: 3300, y: 200 },
-            // Pre-boss
-            { x: 3700, y: 260 },
-        ];
-        shardPositions.forEach(pos => {
-            const e = new FloatingShard(this, pos.x, pos.y);
-            this.enemyGroup.add(e.sprite);
-            this.enemyInstances.push(e);
-        });
-
-        // Collisions
+        // Collisions (set up once — group reference stays valid)
         this.physics.add.collider(this.enemyGroup, this.platforms);
 
         // Player slash → enemy hits
@@ -224,6 +226,29 @@ class GameScene extends Phaser.Scene {
             this.enemyGroup,
             (_, enemySprite) => this._onEnemyTouchPlayer(enemySprite),
         );
+    }
+
+    /**
+     * Spawn enemy instances from this.enemySpawns, skipping any IDs
+     * present in the `skipIds` array (e.g. already-killed enemies).
+     * @param {string[]} skipIds - Array of spawn IDs to skip.
+     */
+    _spawnFromSpawns(skipIds) {
+        this.enemySpawns.forEach(spawn => {
+            if (skipIds.includes(spawn.id)) return;
+
+            let enemy;
+            if (spawn.type === 'shadow') {
+                enemy = new ShadowFragment(this, spawn.x, spawn.y);
+            } else if (spawn.type === 'floating') {
+                enemy = new FloatingShard(this, spawn.x, spawn.y);
+            }
+            if (enemy) {
+                enemy.spawnId = spawn.id;
+                this.enemyGroup.add(enemy.sprite);
+                this.enemyInstances.push(enemy);
+            }
+        });
     }
 
     _onPlayerHitEnemy(enemySprite) {
@@ -258,9 +283,14 @@ class GameScene extends Phaser.Scene {
         this.cameras.main.shake(hitStop * 0.6 / 1000, shake / 100);
         this._spawnHitParticles(enemy.x, enemy.y - 10);
 
-        // Kill bonus Feelings
+        // Kill bonus Feelings + tracking
         if (enemy.dead && enemy.feelingsDrop > 0) {
             this.player.feelings = Math.min(100, this.player.feelings + enemy.feelingsDrop);
+        }
+        if (enemy.dead && enemy.spawnId) {
+            if (!this.enemiesKilled.includes(enemy.spawnId)) {
+                this.enemiesKilled.push(enemy.spawnId);
+            }
         }
     }
 
@@ -304,6 +334,7 @@ class GameScene extends Phaser.Scene {
             playerData: {
                 hp: this.player.hp,
                 feelings: this.player.feelings,
+                abilities: { ...this.player.abilities },
             },
         });
     }
@@ -318,15 +349,26 @@ class GameScene extends Phaser.Scene {
             jump2: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
             attack: this.input.keyboard.addKey('J'),
             attack2: this.input.keyboard.addKey('Z'),
+            dash1: this.input.keyboard.addKey('K'),
+            dash2: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT),
         };
 
         this._attackHandlerJ = () => {
             if (this.pauseMenu && this.pauseMenu.isPaused) return;
-            if (this.player && !this.bossActive) this.player.attackPressed();
+            if (this.isResting) return;
+            if (this.player && !this.bossActive) {
+                // Don't attack while near a bench — J is "rest" there
+                if (this._getNearbyBench()) return;
+                this.player.attackPressed();
+            }
         };
         this._attackHandlerZ = () => {
             if (this.pauseMenu && this.pauseMenu.isPaused) return;
-            if (this.player && !this.bossActive) this.player.attackPressed();
+            if (this.isResting) return;
+            if (this.player && !this.bossActive) {
+                if (this._getNearbyBench()) return;
+                this.player.attackPressed();
+            }
         };
 
         this.input.keyboard.on('keydown-J', this._attackHandlerJ);
@@ -346,7 +388,27 @@ class GameScene extends Phaser.Scene {
 
     update(time, delta) {
         this.pauseMenu.update();
+
+        // Update the map overlay even when paused (so player marker moves)
+        if (this.mapView) {
+            this.mapView.update(this.player.x, this.player.y);
+        }
+
         if (this.pauseMenu.isPaused || this.scene.isPaused()) return;
+
+        // ---- Bench interaction check ----
+        if (!this.isResting && !this.player.dead) {
+            const nearbyBench = this._getNearbyBench();
+            if (nearbyBench) {
+                nearbyBench.showPrompt(true);
+                if (Phaser.Input.Keyboard.JustDown(this.keys.attack)) {
+                    this._restAtBench(nearbyBench);
+                }
+            } else {
+                // Hide all bench prompts
+                this.benches.forEach(b => b.showPrompt(false));
+            }
+        }
 
         this.player.update(delta);
 
@@ -359,6 +421,189 @@ class GameScene extends Phaser.Scene {
         this.hud.drawPips(this.player.hp);
         this.hud.drawFeelings(this.player.feelings);
         this._updateBackground();
+    }
+
+    /* ================================================================== */
+    /*  Bench system                                                        */
+    /* ================================================================== */
+
+    /** Ground surface Y (top of ground collider). */
+    get _groundSurfaceY() { return 550; }
+
+    /** Create bench instances at fixed positions across the world. */
+    _createBenches() {
+        this.benches = [
+            new Bench(this, 600,  this._groundSurfaceY),
+            new Bench(this, 1800, this._groundSurfaceY),
+            new Bench(this, 3000, this._groundSurfaceY),
+            new Bench(this, 3850, this._groundSurfaceY),
+        ];
+    }
+
+    /**
+     * Return the nearest bench whose interaction zone contains the player,
+     * or null if none are nearby.
+     * @returns {Bench|null}
+     */
+    _getNearbyBench() {
+        if (!this.player || !this.benches) return null;
+        for (let i = 0; i < this.benches.length; i++) {
+            if (this.benches[i].isPlayerNearby(this.player.x, this.player.y)) {
+                return this.benches[i];
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Rest at a bench: freeze player → alpha pulse → full restore →
+     * show text → save → reset enemies.
+     * @param {Bench} bench
+     */
+    _restAtBench(bench) {
+        if (this.isResting) return;
+        this.isResting = true;
+
+        // Hide all prompts
+        this.benches.forEach(b => b.showPrompt(false));
+
+        // Freeze player
+        this.player.body.setVelocity(0, 0);
+        this.player.body.setAllowGravity(false);
+
+        // Bench visual pulse
+        bench.playRestEffect();
+
+        // Player alpha pulse
+        this.tweens.add({
+            targets: this.player.sprite,
+            alpha: 0.3,
+            duration: 200,
+            yoyo: true,
+            ease: 'Sine.easeInOut',
+            hold: 100,
+            onComplete: () => {
+                // Full restore
+                this.player.heal(this.player.maxHp);
+                this.player.feelings = 100;
+                this.player.sprite.setAlpha(1);
+                this.player.body.setAllowGravity(true);
+
+                // Audio feedback
+                this.sound.play('sfx_ui_confirm', { volume: 0.4 });
+
+                // Reset all enemies (before save so save has clean state)
+                this._resetEnemies();
+
+                // Save game
+                this._saveGame();
+
+                // Floating "RESTORED" text
+                this._showRestoredText();
+
+                // Re-enable controls
+                this.isResting = false;
+            },
+        });
+    }
+
+    /** Show a brief floating "◆ RESTORED ◆" text above the player. */
+    _showRestoredText() {
+        const txt = this.add.text(
+            this.player.x,
+            this.player.y - 40,
+            '\u25C6 RESTORED \u25C6',
+            {
+                fontSize: '12px',
+                fontFamily: 'monospace',
+                color: '#7FE0DE',
+            },
+        ).setOrigin(0.5).setDepth(200);
+
+        this.tweens.add({
+            targets: txt,
+            y: txt.y - 24,
+            alpha: 0,
+            duration: 1000,
+            ease: 'Power2',
+            onComplete: () => txt.destroy(),
+        });
+    }
+
+    /* ================================================================== */
+    /*  Save / Load                                                         */
+    /* ================================================================== */
+
+    /** Persist current game state to localStorage under 'sekai_save'. */
+    _saveGame() {
+        const data = {
+            hp: this.player.hp,
+            maxHp: this.player.maxHp,
+            feelings: this.player.feelings,
+            scene: 'GameScene',
+            playerX: this.player.x,
+            playerY: this.player.y,
+            abilities: { ...this.player.abilities },
+            benchesUsed: this.benches
+                .filter(b => b.usedCount > 0)
+                .map(b => b.x),
+            enemiesKilled: [...this.enemiesKilled],
+        };
+        try {
+            localStorage.setItem('sekai_save', JSON.stringify(data));
+        } catch (e) {
+            console.warn('Failed to save game:', e);
+        }
+    }
+
+    /**
+     * Apply save data after all systems are initialised.
+     * Called from create() when this.loadSaveData is present.
+     * @param {object} data - Parsed save object.
+     */
+    _applySaveData(data) {
+        if (!data) return;
+
+        // Restore player stats
+        this.player.loadState(data);
+
+        // Reposition player
+        if (data.playerX !== undefined && data.playerY !== undefined) {
+            this.player.sprite.body.reset(data.playerX, data.playerY);
+            this.player.sprite.setPosition(data.playerX, data.playerY);
+            this.player.body.setVelocity(0, 0);
+        }
+
+        // Mark used benches
+        const usedCoords = data.benchesUsed || [];
+        this.benches.forEach(b => {
+            if (usedCoords.includes(b.x)) {
+                b.usedCount++;
+            }
+        });
+    }
+
+    /* ================================================================== */
+    /*  Enemy reset                                                         */
+    /* ================================================================== */
+
+    /** Destroy all current enemies and respawn them from spawn definitions. */
+    _resetEnemies() {
+        // Destroy alive enemy sprites
+        this.enemyInstances.forEach(e => {
+            if (e.sprite && e.sprite.active) {
+                this.tweens.killTweensOf(e.sprite);
+                e.sprite.destroy();
+            }
+        });
+        this.enemyInstances = [];
+        this.enemyGroup.clear(true, true);
+
+        // Clear killed list so ALL enemies respawn
+        this.enemiesKilled = [];
+
+        // Recreate from spawn definitions
+        this._spawnFromSpawns([]);
     }
 
     _updateBackground() {

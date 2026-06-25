@@ -30,9 +30,14 @@ class MenuScene extends Phaser.Scene {
         this._buildHint();
         this._createControls();
 
-        // Audio — start menu BGM
-        this.bgm = null;
-        this.menuBgmStarted = false;
+        // Audio — start menu BGM immediately
+        this.bgm = this.sound.add('bgm_menu', { loop: true, volume: 0 });
+        this.bgm.play();
+        this.tweens.add({
+            targets: this.bgm,
+            volume: 0.35,
+            duration: 1000,
+        });
         
         // Fade in on entry
         this.cameras.main.fadeIn(500);
@@ -170,9 +175,16 @@ class MenuScene extends Phaser.Scene {
     /* ------------------------------------------------------------------ */
 
     _buildMenuItems() {
+        const hasSave = (() => {
+            try {
+                const raw = localStorage.getItem('sekai_save');
+                return !!(raw && JSON.parse(raw));
+            } catch (_) { return false; }
+        })();
+
         const itemDefs = [
             { label: 'NEW GAME',  action: 'newGame',  disabled: false },
-            { label: 'CONTINUE',  action: 'continue', disabled: true  },
+            { label: 'CONTINUE',  action: 'continue', disabled: !hasSave },
             { label: 'CREDITS',   action: 'credits',  disabled: true  },
         ];
 
@@ -298,8 +310,6 @@ class MenuScene extends Phaser.Scene {
     }
 
     _navigate(dir) {
-        this._startMenuBgm();
-
         let next = this.selectedIndex + dir;
 
         // Clamp and skip disabled items
@@ -327,22 +337,42 @@ class MenuScene extends Phaser.Scene {
             case 'newGame':
                 this._startNewGame();
                 break;
+            case 'continue':
+                this._continueGame();
+                break;
             default:
                 this.inputEnabled = true;
                 break;
         }
     }
 
-    _startMenuBgm() {
-        if (this.menuBgmStarted) return;
-        this.menuBgmStarted = true;
+    _continueGame() {
+        let saveData;
+        try {
+            const raw = localStorage.getItem('sekai_save');
+            if (!raw) { this.inputEnabled = true; return; }
+            saveData = JSON.parse(raw);
+        } catch (_) {
+            this.inputEnabled = true;
+            return;
+        }
 
-        this.bgm = this.sound.add('bgm_menu', { loop: true, volume: 0 });
-        this.bgm.play();
-        this.tweens.add({
-            targets: this.bgm,
-            volume: 0.35,
-            duration: 1000,
+        // Audio — start game SFX, fade BGM out
+        this.sound.play('sfx_ui_start', { volume: 0.55 });
+        if (this.bgm) {
+            this.tweens.add({
+                targets: this.bgm,
+                volume: 0,
+                duration: 500,
+                onComplete: () => { this.bgm.stop(); this.bgm.destroy(); this.bgm = null; },
+            });
+        }
+
+        // Brief flash then transition with save data
+        this.cameras.main.flash(200, 255, 255, 255);
+
+        this.time.delayedCall(300, () => {
+            SceneManager.goTo(this, 'GameScene', { loadSave: saveData });
         });
     }
 

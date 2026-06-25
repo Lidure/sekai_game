@@ -80,10 +80,13 @@ class BossScene extends Phaser.Scene {
         platforms.add(collider);
     }
 
-    _createPlayer() {
-        this.player = new Player(this, 200, 530.8);
+_createPlayer() {
+        this.player = new Player(this, 200, 480);
         this.player.hp = this.playerData.hp || 100;
         this.player.feelings = this.playerData.feelings || 0;
+        if (this.playerData.abilities) {
+            Object.assign(this.player.abilities, this.playerData.abilities);
+        }
     }
 
     _createBoss() {
@@ -134,6 +137,8 @@ class BossScene extends Phaser.Scene {
             jump2: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
             attack: this.input.keyboard.addKey('J'),
             attack2: this.input.keyboard.addKey('Z'),
+            dash1: this.input.keyboard.addKey('K'),
+            dash2: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT),
         };
 
         this._attackHandlerJ = () => {

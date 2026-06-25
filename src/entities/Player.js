@@ -26,11 +26,16 @@ class Player {
         this.hp = 100;
         this.maxHp = 100;
         this.feelings = 0;
+        this.jumpCount = 0;
         this.comboCount = 0;
         this.comboTimer = 0;
         this.feelingsTimer = 3001;
         this.invulnTimer = 0;
         this.bufferAttack = -1;
+
+        this.abilities = { dash: true, doubleJump: true, shadowCloak: false };
+        this.dashUsedThisJump = false;
+        this.dashCooldownTimer = 0;
 
         this.slashHitbox = scene.add.zone(0, 0, 12, 10);
         scene.physics.add.existing(this.slashHitbox, false);
@@ -49,6 +54,12 @@ class Player {
     set flipX(v) { this.sprite.flipX = v; }
     get onGround() {
         return this.body.touching.down || this.body.blocked.down;
+    }
+
+    get canDash() {
+        return this.abilities.dash &&
+            this.dashCooldownTimer <= 0 &&
+            (this.isGroundedStable || !this.dashUsedThisJump);
     }
 
     _applyBodyConfig() {
@@ -92,7 +103,7 @@ class Player {
     }
 
     takeDamage(amount, knockbackX, knockbackY) {
-        if (this.invulnTimer > 0 || this.dead) return;
+        if (this.invulnTimer > 0 || this.dead || this.state === 'dashing') return;
         this.hp -= amount;
         this.invulnTimer = 60;  // 1s invincibility (60 frames @ 60fps)
         this.feelings = Math.min(100, this.feelings + 5);
@@ -151,8 +162,14 @@ class Player {
             this.comboTimer -= delta;
             if (this.comboTimer <= 0) this.comboCount = 0;
         }
+        if (this.dashCooldownTimer > 0) this.dashCooldownTimer -= dt;
 
         const contact = this._refreshGroundedState();
+
+        // Landing refreshes dash ability
+        if (contact.rawGrounded) {
+            this.dashUsedThisJump = false;
+        }
         const grounded = contact.grounded;
         const airborne = contact.airborne;
         const rawGrounded = contact.rawGrounded;
@@ -163,6 +180,16 @@ class Player {
         const DRAG = 700;
         const MAX_SPEED = 180;
 
+        // Dash activation — only from move/air states
+        const dashPressed = (
+            (this.scene.keys.dash1 && Phaser.Input.Keyboard.JustDown(this.scene.keys.dash1)) ||
+            (this.scene.keys.dash2 && Phaser.Input.Keyboard.JustDown(this.scene.keys.dash2))
+        );
+        if (dashPressed && this.canDash &&
+            (this.state === 'idle' || this.state === 'run' || this.state === 'jump' || this.state === 'fall')) {
+            this._enterState('dashing');
+        }
+
         switch (this.state) {
             case 'idle':
             case 'run':
@@ -171,6 +198,9 @@ class Player {
             case 'jump':
             case 'fall':
                 this._handleAirState(dt, left, right, jump, attack, grounded, airborne, rawGrounded, SPEED, JUMP_VEL, ACCEL, DRAG, MAX_SPEED);
+                break;
+            case 'dashing':
+                this._handleDashState(dt);
                 break;
             case 'attack1_startup':
             case 'attack1_recovery':
@@ -202,7 +232,7 @@ class Player {
                 break;
         }
 
-        if (this.state !== 'idle' && this.state !== 'run' && this.state !== 'jump' && this.state !== 'fall') {
+        if (this.state !== 'idle' && this.state !== 'run' && this.state !== 'jump' && this.state !== 'fall' && this.state !== 'dashing') {
             this.body.setAccelerationX(0);
             this.body.setDragX(DRAG);
         }
@@ -229,6 +259,7 @@ class Player {
         }
         if (jump && grounded) {
             this.body.setVelocityY(JUMP_VEL);
+            this.jumpCount = 1;
             this._enterState('jump');
             return;
         }
@@ -282,6 +313,18 @@ class Player {
     _handleAirState(dt, left, right, jump, attack, grounded, airborne, rawGrounded, SPEED, JUMP_VEL, ACCEL, DRAG, MAX_SPEED) {
         if (attack && this.body.velocity.y >= -50) {
             this._enterState('air_attack_startup');
+            return;
+        }
+
+        // Double jump: one additional jump while airborne (if ability unlocked)
+        if (jump && this.abilities.doubleJump && this.jumpCount < 2) {
+            const vel = this.jumpCount === 0 ? JUMP_VEL : -350;
+            this.body.setVelocityY(vel);
+            this.jumpCount++;
+            this._enterState('jump');
+            if (this.jumpCount === 2) {
+                this._spawnDoubleJumpVFX();
+            }
             return;
         }
 
@@ -405,6 +448,57 @@ class Player {
         }
     }
 
+    _handleDashState(dt) {
+        this.stateTimer -= dt;
+
+        // Wall collision → end dash early
+        if (this.body.blocked.left || this.body.blocked.right) {
+            this._endDash();
+            return;
+        }
+
+        // Fixed horizontal speed; gravity applies normally for air dashes
+        this.body.setVelocityX(this.facingRight ? 600 : -600);
+        this.body.setDragX(0);
+        this.body.setAccelerationX(0);
+
+        // Trail particles each frame
+        this._spawnDashTrail();
+
+        // Duration expired
+        if (this.stateTimer <= 0) {
+            this._endDash();
+        }
+    }
+
+    _endDash() {
+        this.sprite.clearTint();
+        this.dashCooldownTimer = 0.3;
+        this.dashUsedThisJump = true;
+        this._enterState(this.isGroundedStable ? 'idle' : 'fall');
+    }
+
+    _spawnDashTrail() {
+        const offX = this.facingRight ? -20 : 20;
+        const trail = this.scene.add.circle(
+            this.sprite.x + offX + Phaser.Math.Between(-4, 4),
+            this.sprite.y + Phaser.Math.Between(-8, 8),
+            Phaser.Math.Between(2, 4),
+            0x7FE0DE,
+            0.7
+        );
+        trail.setDepth(5);
+        this.scene.tweens.add({
+            targets: trail,
+            alpha: 0,
+            scaleX: 0.1,
+            scaleY: 0.1,
+            duration: 250,
+            ease: 'Power2',
+            onComplete: () => trail.destroy(),
+        });
+    }
+
     _enterState(newState) {
         if (this.state === newState) return;
         this.state = newState;
@@ -424,6 +518,7 @@ class Player {
             case 'air_attack_startup': return at60fps(7);
             case 'air_attack_active': return at60fps(25);
             case 'air_attack_recovery': return at60fps(8);
+            case 'dashing': return 0.25;
             case 'hurt': return 0.3;
             case 'dead': return 99;
             default: return 0;
@@ -433,6 +528,7 @@ class Player {
     _onStateEnter(state) {
         switch (state) {
             case 'idle':
+                this.jumpCount = 0;
                 if (this.sprite.anims && this.sprite.anims.isPlaying) {
                     this.sprite.anims.stop();
                 }
@@ -490,6 +586,15 @@ class Player {
                     this.scene.sound.play('sfx_sword_air', { volume: 0.55 });
                 }
                 break;
+            case 'dashing':
+                if (this.sprite.anims && this.sprite.anims.isPlaying) {
+                    this.sprite.anims.stop();
+                }
+                this._setTextureStable('player_run');
+                this.sprite.setTint(0x7FE0DE);
+                this._disableHitbox();
+                this.scene.sound.play('sfx_player_dash', { volume: 0.5 });
+                break;
             case 'hurt':
                 if (this.sprite.anims && this.sprite.anims.isPlaying) {
                     this.sprite.anims.stop();
@@ -535,6 +640,29 @@ class Player {
         this.slashHitbox.body.setSize(0, 0);
     }
 
+    _spawnDoubleJumpVFX() {
+        // White circle burst at feet on double jump activation
+        for (let i = 0; i < 6; i++) {
+            const p = this.scene.add.circle(
+                this.x,
+                this.y + 20,
+                Phaser.Math.Between(2, 5),
+                0xffffff,
+                0.8
+            );
+            p.setDepth(15);
+            this.scene.tweens.add({
+                targets: p,
+                x: p.x + Phaser.Math.Between(-30, 30),
+                y: p.y + Phaser.Math.Between(-30, 0),
+                alpha: 0,
+                duration: 400,
+                ease: 'Power2',
+                onComplete: () => p.destroy(),
+            });
+        }
+    }
+
     onHitEnemy() {
         this.comboCount++;
         this.comboTimer = 2000;
@@ -542,12 +670,46 @@ class Player {
         this.feelings = Math.min(100, this.feelings + 8);
     }
 
+    /* ------------------------------------------------------------------ */
+    /*  Save / Load                                                        */
+    /* ------------------------------------------------------------------ */
+
+    /** @returns {object} Serializable subset of player state. */
+    saveState() {
+        return {
+            hp: this.hp,
+            maxHp: this.maxHp,
+            feelings: this.feelings,
+            abilities: { ...this.abilities },
+        };
+    }
+
+    /**
+     * Restore player state from a save data object.
+     * Does NOT change position or physics — that is handled externally.
+     * @param {object} data - Shape matching saveState().
+     */
+    loadState(data) {
+        if (data.hp !== undefined) this.hp = Math.min(data.hp, this.maxHp);
+        if (data.maxHp !== undefined) this.maxHp = data.maxHp;
+        if (data.feelings !== undefined) this.feelings = data.feelings;
+        if (data.abilities) {
+            this.abilities.dash = !!data.abilities.dash;
+            this.abilities.doubleJump = !!data.abilities.doubleJump;
+            this.abilities.shadowCloak = !!data.abilities.shadowCloak;
+        }
+    }
+
     reset(x, y, hp = this.maxHp) {
         this.hp = hp;
         this.feelings = 0;
         this.feelingsTimer = 3001;
         this.dead = false;
+        this.jumpCount = 0;
         this.state = 'idle';
+        this.abilities = { dash: true, doubleJump: true, shadowCloak: false };
+        this.dashUsedThisJump = false;
+        this.dashCooldownTimer = 0;
         this.offGroundFrames = 0;
         this.groundedFrames = 0;
         this.airborneFrames = 0;
