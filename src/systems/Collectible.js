@@ -2,7 +2,7 @@
  * Collectible — A floating, glow-pulsing pickup item for SEKAI Metroidvania.
  *
  * Types:
- *   - 'hp_up':       Permanent max HP increase (+10, max 150). Persistent.
+ *   - 'hp_up':       Permanent max HP increase (+5, max 150). Persistent.
  *   - 'feelings_up': Permanent Feelings max increase (+50, max 150). Persistent.
  *   - 'health':      Heal 30 HP. NOT persistent (respawns on bench rest).
  *
@@ -132,7 +132,7 @@ class Collectible {
     _applyEffect(player) {
         switch (this.type) {
             case 'hp_up':
-                player.maxHp = Math.min(150, player.maxHp + this.value);
+                player.maxHp = Math.min(150, player.maxHp + 5);
                 player.hp = player.maxHp; // full restore
                 this._showText('HP UP', '#FF87A0');
                 break;

@@ -41,6 +41,7 @@ class PauseMenu {
         // Confirmation sub-state for "Return to Main Menu"
         this.confirmMode = false;
         this.confirmChoice = 0; // 0 = CANCEL, 1 = CONFIRM
+        this.savePicker = null;
 
         // Root container — fixed to camera, rendered above game world
         this.container = scene.add.container(0, 0)
@@ -70,8 +71,8 @@ class PauseMenu {
     /* ================================================================== */
 
     _build() {
-        const W = 960;
-        const H = 720;
+        const W = this.scene.scale.width;
+        const H = this.scene.scale.height;
 
         // Panel dimensions
         const pW = 384;
@@ -157,6 +158,7 @@ class PauseMenu {
         /* ---- Menu items ---- */
         const itemDefs = [
             { label: 'RESUME',         action: 'resume' },
+            { label: 'SAVE',           action: 'save' },
             { label: 'RETURN TO MENU', action: 'mainMenu' },
             { label: 'FULLSCREEN',     action: 'fullscreen' },
             { label: 'VOICE',          action: null },    // slider handled separately
@@ -219,16 +221,16 @@ class PauseMenu {
         });
 
         /* ---- Fullscreen indicator ---- */
-        // "[ON]" or "[OFF]" shown to the right of the FULLSCREEN item
-        this.fsText = this.scene.add.text(582, startY + 2 * gap, '', {
+        // "[ON]" or "[OFF]" shown at the right edge of the FULLSCREEN row
+        this.fsText = this.scene.add.text(px + pW - 20, startY + 3 * gap, '', {
             fontSize: '14px',
             fontFamily: 'monospace',
             color: '#7FE0DE',
-        }).setOrigin(0, 0.5);
+        }).setOrigin(1, 0.5);
         this.container.add(this.fsText);
 
         /* ---- Volume slider ---- */
-        this._buildSlider(cx, startY + 3 * gap);
+        this._buildSlider(cx, startY + 4 * gap);
 
         /* ---- Confirmation dialog (hidden until triggered) ---- */
         this._buildConfirmation();
@@ -247,9 +249,11 @@ class PauseMenu {
     /* ------------------------------------------------------------------ */
 
     _buildSlider(cx, y) {
+        const pW = 384;
+        const px = (this.scene.scale.width - pW) / 2;
         const barW = 110;
         const barH = 6;
-        const barX = cx - 20;   // 380
+        const barX = px + pW - 20 - barW - 8 - 30; // right-aligned before percentage + padding
         const barY = y - barH / 2;
 
         this._sliderCfg = { barW, barH, barX, barY };
@@ -318,14 +322,14 @@ class PauseMenu {
         // Dim overlay
         const dim = this.scene.add.graphics();
         dim.fillStyle(0x000000, 0.40);
-        dim.fillRect(0, 0, 960, 720);
+        dim.fillRect(0, 0, this.scene.scale.width, this.scene.scale.height);
         this.confirmGroup.add(dim);
 
         // Popup rectangle
         const popW = 276;
         const popH = 120;
-        const popX = (960 - popW) / 2;
-        const popY = (720 - popH) / 2;
+        const popX = (this.scene.scale.width - popW) / 2;
+        const popY = (this.scene.scale.height - popH) / 2;
         const pcx = popX + popW / 2;
 
         const popup = this.scene.add.graphics();
@@ -391,6 +395,13 @@ class PauseMenu {
     _buildKeyboard() {
         this._toggleHandler = (event) => {
             if (this.destroyed) return;
+            // Save picker open → route ESC to picker
+            if (this.savePicker && !this.savePicker.destroyed) {
+                this.savePicker._cancel();
+                this.savePicker = null;
+                if (event) event.preventDefault();
+                return;
+            }
             // ESC / P in confirm mode → cancel confirmation, return to menu
             if (this.confirmMode) {
                 this._closeConfirm();
@@ -437,6 +448,7 @@ class PauseMenu {
     _canInteract() {
         // In confirm mode, the main inputEnabled check still gates us;
         // the confirmation popup uses this same flag.
+        if (this.savePicker && !this.savePicker.destroyed) return false;
         return this.isOpen && this.inputEnabled && !this.destroyed;
     }
 
@@ -449,8 +461,17 @@ class PauseMenu {
 
         this.isOpen = true;
         this.inputEnabled = false;
+
+        this._savedZoom = this.scene.cameras.main.zoom;
         this.selectedIndex = 0;
         this.confirmMode = false;
+
+        // Show overlay before changing zoom — masks the viewport shift
+        this.container.setVisible(true);
+        this.container.setAlpha(1);
+
+        // Change to menu-friendly zoom while dark overlay hides the transition
+        this.scene.cameras.main.setZoom(1);
 
         // Pause game world
         if (this.scene.physics && this.scene.physics.world) {
@@ -464,10 +485,6 @@ class PauseMenu {
             sub.setAlpha(0);
         });
         this.selectionGlow.setAlpha(0);
-
-        // Show the container
-        this.container.setVisible(true);
-        this.container.setAlpha(1);
 
         // Stagger items in
         this.itemContainers.forEach((sub, i) => {
@@ -500,23 +517,19 @@ class PauseMenu {
         this.isOpen = false;
         this.confirmMode = false;
 
-        // Hide confirmation if it was open
         this.confirmGroup.setVisible(false);
 
-        // Quick fade out
-        this.scene.tweens.add({
-            targets: this.container,
-            alpha: 0,
-            duration: 120,
-            ease: 'Sine.easeIn',
-            onComplete: () => {
-                if (this.destroyed) return;
-                this.container.setVisible(false);
-                this.container.setAlpha(1);
-                this.itemContainers.forEach((sub) => {
-                    sub.setAlpha(1);
-                });
-            },
+        // Restore zoom instantly
+        if (this._savedZoom !== undefined) {
+            this.scene.cameras.main.setZoom(this._savedZoom);
+            this._savedZoom = undefined;
+        }
+
+        // Hide overlay immediately — no fade to avoid zoom/position flash
+        this.container.setVisible(false);
+        this.container.setAlpha(1);
+        this.itemContainers.forEach((sub) => {
+            sub.setAlpha(1);
         });
 
         // Resume game
@@ -642,7 +655,7 @@ class PauseMenu {
     /* ================================================================== */
 
     _updateHelpText() {
-        if (this.selectedIndex === 3) {
+        if (this.selectedIndex === 4) {
             // VOICE selected — show adjustment hint
             this.helpText.setText('\u2190\u2192 Adjust Volume  |  ESC Close');
         } else {
@@ -680,6 +693,9 @@ class PauseMenu {
             case 'resume':
                 this._close();
                 break;
+            case 'save':
+                this._openSavePicker();
+                break;
             case 'mainMenu':
                 this._showConfirm();
                 break;
@@ -687,6 +703,61 @@ class PauseMenu {
                 this._toggleFullscreen();
                 break;
         }
+    }
+
+    /* ================================================================== */
+    /*  SAVE SLOT PICKER                                                    */
+    /* ================================================================== */
+
+    _openSavePicker() {
+        this.inputEnabled = false;
+        this.savePicker = new SaveSlotPicker(this.scene, {
+            mode: 'save',
+            onSelect: (slotIndex) => {
+                this.scene._saveGame(slotIndex);
+                this.savePicker = null;
+                this._showSaveFeedback();
+                this.scene.time.delayedCall(500, () => {
+                    this.inputEnabled = true;
+                });
+            },
+            onCancel: () => {
+                this.savePicker = null;
+                this.inputEnabled = true;
+            },
+        });
+    }
+
+    /* ================================================================== */
+    /*  SAVE FEEDBACK                                                       */
+    /* ================================================================== */
+
+    _showSaveFeedback() {
+        if (this._saveText) this._saveText.destroy();
+        this._saveText = this.scene.add.text(
+            this.scene.scale.width / 2, 200,
+            '\u2605 SAVED \u2605',
+            {
+                fontSize: '16px',
+                fontFamily: 'monospace',
+                color: '#7FE0DE',
+            },
+        ).setOrigin(0.5).setScrollFactor(0).setAlpha(0);
+        this.container.add(this._saveText);
+
+        this.scene.tweens.add({
+            targets: this._saveText,
+            alpha: { from: 1, to: 0 },
+            y: '-=20',
+            duration: 1200,
+            ease: 'Sine.easeOut',
+            onComplete: () => {
+                if (this._saveText && !this.destroyed) {
+                    this._saveText.destroy();
+                    this._saveText = null;
+                }
+            },
+        });
     }
 
     /* ================================================================== */
@@ -727,7 +798,7 @@ class PauseMenu {
         if (!this.inputEnabled) return;
 
         // Only respond when VOICE (index 3) is selected and we're not in confirm mode
-        if (this.selectedIndex !== 3 || this.confirmMode) return;
+        if (this.selectedIndex !== 4 || this.confirmMode) return;
 
         const current = typeof this.scene.sound.volume === 'number'
             ? this.scene.sound.volume

@@ -38,6 +38,33 @@
 
         this.load.image('broken_seikai_bg', 'assets/游戏素材/broken_seikai.png');
 
+        // 鈹€鈹€ Zone ground tiles (replaces programmatic generation with Kenney composites) 鈹€鈹€
+        this.load.image('ground_intro',    'assets/images/tiles/ground_intro.png');
+        this.load.image('ground_ascent',   'assets/images/tiles/ground_ascent.png');
+        this.load.image('ground_secret',   'assets/images/tiles/ground_secret.png');
+        this.load.image('ground_lower',    'assets/images/tiles/ground_lower.png');
+        this.load.image('ground_mid',      'assets/images/tiles/ground_mid.png');
+        this.load.image('ground_preboss',  'assets/images/tiles/ground_preboss.png');
+        this.load.image('ground_boss',     'assets/images/tiles/ground_boss.png');
+
+        // ═══ Tilemap JSON files (one per room) ═══
+        this.load.tilemapTiledJSON('room_intro',    'assets/maps/intro.tmj');
+        this.load.tilemapTiledJSON('room_ascent',   'assets/maps/ascent.tmj');
+        this.load.tilemapTiledJSON('room_secret',   'assets/maps/secret.tmj');
+        this.load.tilemapTiledJSON('room_lower',    'assets/maps/lower.tmj');
+        this.load.tilemapTiledJSON('room_mid',      'assets/maps/mid.tmj');
+        this.load.tilemapTiledJSON('room_shaft',    'assets/maps/shaft.tmj');
+        this.load.tilemapTiledJSON('room_preboss',  'assets/maps/preboss.tmj');
+        this.load.tilemapTiledJSON('room_boss',     'assets/maps/boss.tmj');
+
+        // 鈹€鈹€ Cave parallax backgrounds (replaces programmatic bg_far/bg_mid/bg_near) 鈹€鈹€
+        this.load.image('bg_far',  'assets/images/backgrounds/cave_bg_far.png');
+        this.load.image('bg_mid',  'assets/images/backgrounds/cave_bg_mid.png');
+        this.load.image('bg_near', 'assets/images/backgrounds/cave_bg_near.png');
+
+        // 鈹€鈹€ Warped-caves decoration props 鈹€鈹€
+        this.load.image('deco_stalactite', 'assets/images/decorations/deco_stalactite.png');
+
         // 鈹€鈹€ Enemy textures (real pixel art 鈥?replaces programmatic generation) 鈹€鈹€
         this.load.image('enemy_shadow', 'assets/images/enemies/common/dark_forest_slime/Enemy_Forest_Idle_01.png');
         this.load.image('enemy_shard',  'assets/images/enemies/floating/ghost_gothicvania/Ghost1.png');
@@ -50,6 +77,7 @@
         this.load.audio('bgm_explore',   'assets/audio/bgm/chiptune_exploration.mp3');
         this.load.audio('bgm_boss_p1',   'assets/audio/bgm/8bit_action_boss_battle_bpm145.mp3');
         this.load.audio('bgm_boss_p2',   'assets/audio/bgm/8bit_action_boss_battle_climax_bpm185.mp3');
+        this.load.audio('bgm_credits',   'assets/audio/bgm/credits.mp3');
 
         // Player SFX
         this.load.audio('sfx_player_jump',  'assets/audio/sfx/player/sfx_player_jump_01.wav');
@@ -67,6 +95,7 @@
         // Enemy SFX
         this.load.audio('sfx_enemy_hurt',  'assets/audio/sfx/enemy/sfx_enemy_hurt_01.wav');
         this.load.audio('sfx_enemy_death', 'assets/audio/sfx/enemy/sfx_enemy_death_01.wav');
+        this.load.audio('sfx_enemy_attack','assets/audio/sfx/enemy/sfx_enemy_laser_01.mp3');
         this.load.audio('sfx_boss_hit',    'assets/audio/sfx/enemy/sfx_enemy_metal_hit_01.mp3');
         this.load.audio('sfx_boss_roar',   'assets/audio/sfx/enemy/sfx_enemy_roar_01.mp3');
         this.load.audio('sfx_boss_death',  'assets/audio/sfx/enemy/sfx_enemy_death_02.mp3');
@@ -83,8 +112,9 @@
     }
 
     create() {
-        this._generateBackgroundTextures();
-        this._generateGroundTextures();
+        // NOTE: zone ground tiles, cave backgrounds, and deco_stalactite are loaded
+        // in preload() as real image assets — no longer programmatic.
+        // Crystal, torch, and vine are still generated below.
         this._generateDecorationTextures();
         this._generateLegacyTextures();
 
@@ -145,19 +175,18 @@
         }
         this.textures.remove('player_run_sheet');
 
-        // Extract dash spritesheet frames at 64x64
+        // Extract dash spritesheet: 1x4 grid, 256x256 per frame, resize to 64x64
         const dashSrc = this.textures.get('player_dash_raw').getSourceImage();
-        const dashCols = 16;
-        const dashFrameSize = 64;
-        for (let i = 0; i < 64; i++) {
-            const col = i % dashCols;
-            const row = Math.floor(i / dashCols);
+        const dashSrcFrameSize = 256;
+        const dashDstFrameSize = 64;
+        const dashFrameCount = 4;
+        for (let i = 0; i < dashFrameCount; i++) {
             const canvas = document.createElement('canvas');
-            canvas.width = dashFrameSize;
-            canvas.height = dashFrameSize;
+            canvas.width = dashDstFrameSize;
+            canvas.height = dashDstFrameSize;
             const ctx = canvas.getContext('2d');
             ctx.imageSmoothingEnabled = false;
-            ctx.drawImage(dashSrc, col * dashFrameSize, row * dashFrameSize, dashFrameSize, dashFrameSize, 0, 0, dashFrameSize, dashFrameSize);
+            ctx.drawImage(dashSrc, i * dashSrcFrameSize, 0, dashSrcFrameSize, dashSrcFrameSize, 0, 0, dashDstFrameSize, dashDstFrameSize);
             this.textures.addCanvas('player_dash_frame_' + i, canvas);
         }
         this.textures.remove('player_dash_raw');
@@ -209,14 +238,14 @@
             repeat: 0,
         });
 
-        // Dash animation: 4 key poses from the 64-frame sheet, tuned for HK-like dash timing
+        // Dash animation: 4 frames from 1x4 spritesheet
         this.anims.create({
             key: 'player_dash',
             frames: [
                 { key: 'player_dash_frame_0' },
+                { key: 'player_dash_frame_1' },
+                { key: 'player_dash_frame_2' },
                 { key: 'player_dash_frame_3' },
-                { key: 'player_dash_frame_7' },
-                { key: 'player_dash_frame_11' },
             ],
             frameRate: 15,
             repeat: 0,
@@ -237,6 +266,12 @@
         // Free raw spritesheet memory (extracted frames remain)
         this.textures.remove('player_att_raw');
 
+        // Skeleton sheet has a solid background in the source asset. Convert the
+        // frames we actually use into transparent textures so the enemy renders
+        // as sprite art instead of a colored square.
+        this._generateSkeletonTextures();
+        this.textures.remove('enemy_skeleton');
+
         // Item textures (collectible pickups)
         this._generateItemTextures();
 
@@ -250,106 +285,10 @@
      * pixel art assets in preload(). See enemy_shadow (dark_forest_slime)
      * and enemy_shard (ghost_gothicvania) image loads above. */
 
-    _generateBackgroundTextures() {
-        let g;
-
-        g = this.make.graphics({ add: false });
-        g.fillStyle(0x080818);
-        g.fillRect(0, 0, 128, 64);
-        g.fillStyle(0x0a0a1e);
-        g.fillRect(0, 48, 128, 16);
-        g.fillStyle(0x0c0c28);
-        g.fillTriangle(0, 48, 30, 48, 15, 20);
-        g.fillTriangle(50, 48, 80, 48, 65, 14);
-        g.fillTriangle(90, 48, 120, 48, 105, 24);
-        g.fillStyle(0xccccff, 0.4);
-        g.fillCircle(20, 8, 1);
-        g.fillCircle(60, 16, 1.5);
-        g.fillCircle(90, 6, 1);
-        g.fillCircle(110, 22, 0.8);
-        g.fillCircle(40, 30, 0.6);
-        g.generateTexture('bg_far', 128, 64);
-        g.destroy();
-
-        g = this.make.graphics({ add: false });
-        g.fillStyle(0x0a0a1a, 0.6);
-        g.fillRect(0, 0, 128, 64);
-        g.fillStyle(0x122a2a, 0.15);
-        g.fillCircle(40, 10, 18);
-        g.fillCircle(100, 8, 14);
-        g.fillCircle(80, 30, 20);
-        g.fillStyle(0x0e1a1a, 0.1);
-        g.fillRect(10, 2, 20, 4);
-        g.fillRect(70, 18, 16, 3);
-        g.generateTexture('bg_mid', 128, 64);
-        g.destroy();
-
-        g = this.make.graphics({ add: false });
-        g.fillStyle(0x0a0a1a);
-        g.fillRect(0, 0, 64, 64);
-        g.fillStyle(0x0e0e24);
-        for (let i = 0; i < 64; i += 16) {
-            for (let j = 0; j < 64; j += 16) {
-                if ((i / 16 + j / 16) % 2 === 0) {
-                    g.fillRect(i, j, 16, 16);
-                }
-            }
-        }
-        g.generateTexture('bg_near', 64, 64);
-        g.destroy();
-    }
-
-    _generateGroundTextures() {
-        const zoneDefs = [
-            { key: 'ground_intro',    base: 0x556075, top: 0x6a7a8c, bot: 0x3a4a5c, detail: 0x4a5a6a },
-            { key: 'ground_ascent',   base: 0x5a4a6a, top: 0x6e5e7e, bot: 0x3e2e4e, detail: 0x4e3e5e },
-            { key: 'ground_secret',   base: 0x6a5a4a, top: 0x7e6e5e, bot: 0x4a3a2a, detail: 0x3a5a5a },
-            { key: 'ground_lower',    base: 0x4a5a5a, top: 0x5e6e6e, bot: 0x2a3a3a, detail: 0x3a4a4a },
-            { key: 'ground_mid',      base: 0x6a4a4a, top: 0x7e5e5e, bot: 0x4a2a2a, detail: 0x5a3a3a },
-            { key: 'ground_preboss',  base: 0x5a2a2a, top: 0x6e3e3e, bot: 0x3a1a1a, detail: 0x2a0a0a },
-            { key: 'ground_boss',     base: 0x3a1a4a, top: 0x4e2a5e, bot: 0x1a0a2a, detail: 0x2a0a3a },
-        ];
-
-        zoneDefs.forEach(def => {
-            const g = this.make.graphics({ add: false });
-            g.fillStyle(def.base);
-            g.fillRect(0, 0, 64, 34);
-            g.fillStyle(def.top);
-            g.fillRect(0, 0, 64, 4);
-            g.fillStyle(def.bot);
-            g.fillRect(0, 34, 64, 2);
-            g.fillStyle(def.detail);
-            for (let i = 4; i < 64; i += 12) {
-                g.fillRect(i, 6, 2, 2);
-                g.fillRect(i + 6, 10, 2, 2);
-                g.fillRect(i + 3, 20, 2, 2);
-                g.fillRect(i + 9, 28, 2, 2);
-            }
-            if (def.key === 'ground_secret') {
-                g.fillStyle(0x5ae0d0, 0.3);
-                g.fillRect(30, 8, 2, 2);
-                g.fillRect(10, 22, 2, 2);
-            } else if (def.key === 'ground_boss') {
-                g.fillStyle(0x7fe0de, 0.2);
-                g.fillCircle(16, 12, 1);
-                g.fillCircle(48, 24, 1);
-            }
-            g.generateTexture(def.key, 64, 36);
-            g.destroy();
-        });
-    }
-
     _generateDecorationTextures() {
         let g;
 
-        g = this.make.graphics({ add: false });
-        g.fillStyle(0x3a3a4a);
-        g.fillTriangle(0, 24, 8, 24, 4, 4);
-        g.fillTriangle(2, 24, 6, 24, 4, 10);
-        g.fillStyle(0x2a2a3a);
-        g.fillRect(3, 0, 2, 4);
-        g.generateTexture('deco_stalactite', 8, 24);
-        g.destroy();
+        // deco_stalactite is now loaded from assets/images/decorations/deco_stalactite.png
 
         g = this.make.graphics({ add: false });
         g.fillStyle(0x7fe0de, 0.6);
@@ -410,6 +349,50 @@
         }
         bg.generateTexture('bg_tile', 64, 64);
         bg.destroy();
+    }
+
+    /**
+     * Convert selected skeleton sheet frames into transparent textures.
+     * The source PNG uses a flat purple background, so we key that color out
+     * and keep only the actual sprite pixels.
+     */
+    _generateSkeletonTextures() {
+        const src = this.textures.get('enemy_skeleton').getSourceImage();
+        const frameWidth = 48;
+        const frameHeight = 56;
+        const sheetCols = 8;
+
+        const makeFrame = (frameIndex, textureKey) => {
+            const sx = (frameIndex % sheetCols) * frameWidth;
+            const sy = Math.floor(frameIndex / sheetCols) * frameHeight;
+
+            const canvas = document.createElement('canvas');
+            canvas.width = frameWidth;
+            canvas.height = frameHeight;
+
+            const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(src, sx, sy, frameWidth, frameHeight, 0, 0, frameWidth, frameHeight);
+
+            const imageData = ctx.getImageData(0, 0, frameWidth, frameHeight);
+            const data = imageData.data;
+            const bgR = data[0];
+            const bgG = data[1];
+            const bgB = data[2];
+
+            for (let i = 0; i < data.length; i += 4) {
+                if (data[i] === bgR && data[i + 1] === bgG && data[i + 2] === bgB) {
+                    data[i + 3] = 0;
+                }
+            }
+
+            ctx.putImageData(imageData, 0, 0);
+            this.textures.addCanvas(textureKey, canvas);
+        };
+
+        makeFrame(0, 'enemy_skeleton_idle');
+        makeFrame(3, 'enemy_skeleton_windup');
+        makeFrame(6, 'enemy_skeleton_swing');
     }
 
     /** Generate programmatic textures for collectible items. */

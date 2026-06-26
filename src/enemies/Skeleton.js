@@ -1,136 +1,131 @@
 /**
- * Skeleton — Patrol + Approach + Melee Attack enemy.
- *
- * State machine:
- *   PATROL   → walks left-right at 35px/s, reverses at walls
- *            → player within 160px → APPROACH
- *   APPROACH → walks toward player at 45px/s
- *            → player within 50px + cooldown ready → ATTACK
- *            → player beyond 200px → PATROL
- *   ATTACK   → stops, telegraphs 0.4s (white tint),
- *              swings (0.1s active hitbox dealing 12 dmg),
- *              recovers 0.6s → back to APPROACH
- *            → 2s cooldown after attack completes
- *
- * Melee hit detection uses self-contained distance check
- * during the active hitbox window (no physics overlap with
- * a separate zone/group).
- *
- * Narrative: A forgotten soldier of a forgotten war.
- *            It still remembers how to swing a blade.
- *
- * Design doc: design/enemy-combat-design.md (Skeleton section)
+ * Skeleton - Patrol + Approach + Melee Attack enemy with enrage mechanic.
  */
 class Skeleton extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
-            textureKey: 'enemy_skeleton',
-            hp: 8,
+            textureKey: 'enemy_skeleton_idle',
+            hp: 25,
             contactDamage: 3,
             feelingsDrop: 8,
             bodyWidth: 28,
             bodyHeight: 44,
         });
 
-        // Spritesheet frame is 48×56, scale to full 48×56 display for a threatening medium enemy
         this.sprite.setScale(1.0);
-        // Center the origin for easier hitbox alignment
         this.sprite.setOrigin(0.5, 0.5);
+        this._poseKey = 'enemy_skeleton_idle';
 
         // AI state
         this.patrolDir = Math.random() < 0.5 ? 1 : -1;
         this.state = 'patrol';
 
         // Attack timing
-        this.attackCooldown = 0;       // seconds remaining before next attack
-        this.stateTimer = 0;           // seconds countdown within attack state
+        this.attackCooldown = 0;
+        this._attackTimer = 0;
         this.meleeDamage = 12;
-        this._meleeHitDealt = false;   // prevents multi-hit per swing
+        this._meleeHitDealt = false;
+
+        // Enrage
+        this._enraged = false;
+    }
+
+    _setPose(key) {
+        if (!this.sprite || !this.sprite.active || this._poseKey === key) return;
+        this._poseKey = key;
+        this.sprite.setTexture(key);
+    }
+
+    takeDamage(amount, knockbackX, knockbackY, hitstunFrames = 8) {
+        const prevHp = this.hp;
+        super.takeDamage(amount, knockbackX, knockbackY, hitstunFrames);
+
+        if (!this._enraged && prevHp > 4 && this.hp <= 4 && this.hp > 0) {
+            this._enraged = true;
+            this.scene.sound.play('sfx_enemy_attack', { volume: 0.6, detune: -300 });
+            this.scene.time.delayedCall(100, () => {
+                this._applyEnrageTint();
+            });
+        } else if (this._enraged && this.hp > 0) {
+            this.scene.time.delayedCall(100, () => {
+                this._applyEnrageTint();
+            });
+        }
+    }
+
+    _applyEnrageTint() {
+        if (this._enraged && this.sprite && this.sprite.active && !this.dead) {
+            this.sprite.setTint(0xff4444);
+        }
     }
 
     /**
-     * Override Enemy._updateAI — frame-rate independent state machine.
-     * @param {number} dt — delta time in MILLISECONDS (from Phaser update)
+     * @param {number} dt delta time in milliseconds
      * @param {number} playerX
      * @param {number} playerY
      */
     _updateAI(dt, playerX, playerY) {
-        // Convert ms to seconds for countdown-based timing
         const dtSec = dt / 1000;
 
-        // Update cooldown (independent of state)
         if (this.attackCooldown > 0) this.attackCooldown -= dtSec;
 
-        // Direction to player
         const dist = playerX - this.x;
         const absDist = Math.abs(dist);
 
         switch (this.state) {
             case 'patrol':
-                // Show idle/walk frame — frame 0 is the default standing pose
-                this.sprite.setFrame(0);
-
-                // Walk in patrol direction
+                this._setPose('enemy_skeleton_idle');
                 this.body.setVelocityX(this.patrolDir * 35);
 
-                // Reverse at walls
                 if (this.body.blocked.left) this.patrolDir = 1;
                 if (this.body.blocked.right) this.patrolDir = -1;
 
-                // Detect player
+                this.sprite.setFlipX(this.patrolDir > 0);
+
                 if (absDist < 160) {
                     this.state = 'approach';
                 }
                 break;
 
             case 'approach':
-                // Show idle/walk frame
-                this.sprite.setFrame(0);
-
-                // Walk toward player
+                this._setPose('enemy_skeleton_idle');
                 this.body.setVelocityX(Math.sign(dist) * 45);
                 this.sprite.setFlipX(dist > 0);
 
-                // Close enough → attack (if cooldown expired)
                 if (absDist < 50 && this.attackCooldown <= 0) {
                     this.state = 'attack';
-                    this.stateTimer = 1.1;  // total attack duration in seconds
+                    this._attackTimer = 0;
                     this._meleeHitDealt = false;
                 }
 
-                // Player escaped → patrol
                 if (absDist > 200) {
                     this.state = 'patrol';
                 }
                 break;
 
-            case 'attack':
-                // Stop moving during attack
+            case 'attack': {
                 this.body.setVelocityX(0);
                 this.sprite.setFlipX(dist > 0);
+                this._attackTimer += dtSec;
 
-                // Count down
-                this.stateTimer -= dtSec;
+                const atk = this._enraged
+                    ? { tel: 0.25, act: 0.1, rec: 0.2, lock: 0.1 }
+                    : { tel: 0.40, act: 0.1, rec: 0.5, lock: 0.1 };
+                const total = atk.tel + atk.act + atk.rec + atk.lock;
 
-                // ── Telegraph phase (0.0–0.4s): wind-up frame + white tint ──
-                if (this.stateTimer > 0.7) {
-                    // Frame 3: compact wind-up pose — weapon pulled back
-                    this.sprite.setFrame(3);
-                    this.sprite.setTint(0xffffff);
-                }
-                // ── Active hitbox (0.4–0.5s = 0.1s ≈ 6 frames) ──
-                else if (this.stateTimer > 0.6) {
-                    // Frame 6: white swing flash on right side (weapon extending)
-                    this.sprite.setFrame(6);
+                if (this._attackTimer < atk.tel) {
+                    this._setPose('enemy_skeleton_windup');
+                    this.sprite.setTint(this._enraged ? 0xff8888 : 0xffffff);
+                } else if (this._attackTimer < atk.tel + atk.act) {
+                    this._setPose('enemy_skeleton_swing');
                     this.sprite.clearTint();
 
-                    // Deal damage once per swing
                     if (!this._meleeHitDealt) {
+                        this._meleeHitDealt = true;
+                        this.scene.cameras.main.shake(80, 0.02);
+
                         const dx = playerX - this.x;
                         const dy = Math.abs(this.y - playerY);
-
-                        // Direction check: only hit player in front of skeleton
-                        // flipX = false means sprite faces right, true = faces left
                         const facingRight = !this.sprite.flipX;
                         const isInFront = facingRight ? (dx > 0) : (dx < 0);
 
@@ -141,28 +136,28 @@ class Skeleton extends Enemy {
                                 80 * knockDir,
                                 -30,
                             );
-                            this._meleeHitDealt = true;
                         }
                     }
-                }
-                // ── Recovery phase (0.5–1.1s): return to idle frame ──
-                else if (this.stateTimer > 0) {
-                    this.sprite.setFrame(0);
+                } else if (this._attackTimer < atk.tel + atk.act + atk.rec) {
+                    this._setPose('enemy_skeleton_idle');
                     this.sprite.clearTint();
-                }
-
-                // ── Attack complete ──
-                if (this.stateTimer <= 0) {
-                    this.sprite.setFrame(0);
+                    this._applyEnrageTint();
+                } else if (this._attackTimer < total) {
+                    this._setPose('enemy_skeleton_idle');
                     this.sprite.clearTint();
-                    this.attackCooldown = 2;  // 2s before next attack
+                    this._applyEnrageTint();
+                } else {
+                    this.sprite.clearTint();
+                    this._applyEnrageTint();
+                    this.attackCooldown = 2;
+                    this._attackTimer = 0;
                     this.state = 'approach';
                 }
                 break;
+            }
         }
     }
 
-    /** Clean up any tint when dying. */
     die() {
         this.sprite.clearTint();
         super.die();

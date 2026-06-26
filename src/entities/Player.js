@@ -3,33 +3,33 @@ class Player {
         this.scene = scene;
 
         this.sprite = scene.physics.add.sprite(x, y, 'player_idle');
-        this.sprite.setScale(1.35);
+        this.sprite.setScale(0.85);
         this.sprite.setCollideWorldBounds(true);
         this.sprite.setDepth(10);
 
         this.bodyConfig = {
             width: 18,
-            height: 30,
-            topFromOrigin: 2,
+            height: 26,
+            topFromOrigin: 3,
             maxVelocityY: 1200,
         };
         this._applyBodyConfig();
 
         this.moveConfig = {
-            maxRunSpeed: 278,
-            groundAccel: 1700,
-            airAccel: 850,
-            groundDrag: 2400,
-            airDrag: 540,
-            jumpVelocity: -465,
-            doubleJumpVelocity: -430,
+            maxRunSpeed: 180,
+            groundAccel: 1100,
+            airAccel: 550,
+            groundDrag: 1550,
+            airDrag: 350,
+            jumpVelocity: -280,
+            doubleJumpVelocity: -260,
             jumpBufferTime: 0.085,
             coyoteTime: 0.075,
-            maxFallSpeed: 1150,
+            maxFallSpeed: 700,
             lowJumpGravityMult: 2.35,
             fallGravityMult: 2.6,
             jumpCutGravityMult: 3.1,
-            dashSpeed: 560,
+            dashSpeed: 350,
             dashDuration: 0.22,
             dashCooldown: 0.24,
         };
@@ -42,8 +42,8 @@ class Player {
         this.isGroundedStable = false;
         this.isAirborneStable = false;
         this.facingRight = true;
-        this.hp = 100;
-        this.maxHp = 100;
+        this.hp = 50;
+        this.maxHp = 50;
         this.feelings = 0;
         this.feelingsMax = 100;
         this.jumpCount = 0;
@@ -62,7 +62,7 @@ class Player {
         this.dashUsedThisJump = false;
         this.dashCooldownTimer = 0;
 
-        this.slashHitbox = scene.add.zone(0, 0, 12, 10);
+        this.slashHitbox = scene.add.zone(0, 0, 18, 16);
         scene.physics.add.existing(this.slashHitbox, false);
         this.slashHitbox.body.setAllowGravity(false);
         this.slashHitbox.setVisible(false).setDepth(9);
@@ -192,7 +192,7 @@ class Player {
         sprite.setTint(0xff0000);
         sprite.setAlpha(1);
         // Reset scale to base in case of leftover from previous death
-        sprite.setScale(1.35);
+        sprite.setScale(0.85);
 
         // Step 2 (500ms): tween tint red→white, squash scale 1.0→0.9
         scene.time.delayedCall(500, () => {
@@ -212,8 +212,8 @@ class Player {
             // Squash: scale 0.12 → 0.108 (0.9×)
             scene.tweens.add({
                 targets: sprite,
-                scaleX: 1.35 * 0.9,
-                scaleY: 1.35 * 0.9,
+                scaleX: 0.85 * 0.9,
+                scaleY: 0.85 * 0.9,
                 duration: 300,
                 ease: 'Power2',
             });
@@ -273,7 +273,9 @@ class Player {
         const keys = this.scene.keys;
         const left = keys.left.isDown;
         const right = keys.right.isDown;
-        const jump = Phaser.Input.Keyboard.JustDown(keys.jump1) || Phaser.Input.Keyboard.JustDown(keys.jump2);
+        const jumpKey = keys.jump || keys.jump1 || keys.jump2;
+        const dashKey = keys.dash || keys.dash1 || keys.dash2;
+        const jump = jumpKey ? Phaser.Input.Keyboard.JustDown(jumpKey) : false;
         const attack = this.bufferAttack > 0;
 
         if (this.bufferAttack > 0) this.bufferAttack--;
@@ -301,10 +303,7 @@ class Player {
 
 
         // Dash activation — only from move/air states
-        const dashPressed = (
-            (keys.dash1 && Phaser.Input.Keyboard.JustDown(keys.dash1)) ||
-            (keys.dash2 && Phaser.Input.Keyboard.JustDown(keys.dash2))
-        );
+        const dashPressed = dashKey ? Phaser.Input.Keyboard.JustDown(dashKey) : false;
         if (dashPressed && this.canDash &&
             (this.state === 'idle' || this.state === 'run' || this.state === 'jump' || this.state === 'fall')) {
             this._enterState('dashing');
@@ -440,7 +439,7 @@ class Player {
 
     _handleAirState(dt, left, right, jump, attack, grounded, airborne, rawGrounded) {
         const { airAccel, airDrag, maxRunSpeed, jumpVelocity, doubleJumpVelocity } = this.moveConfig;
-        if (attack && this.body.velocity.y >= -50) {
+        if (attack) {
             this._enterState('air_attack_startup');
             return;
         }
@@ -491,7 +490,7 @@ class Player {
     _handleAttack1State(dt, attack, grounded) {
         // Only zero X velocity on ground; in air, allow horizontal drift
         if (this.isGroundedStable) {
-            this.body.setVelocityX(this.body.velocity.x * 0.4);
+            this.body.setVelocityX(this.body.velocity.x * 0.55);
         }
         if (this.state === 'attack1_startup') {
             this.stateTimer -= dt;
@@ -526,7 +525,7 @@ class Player {
     _handleAttack2State(dt, attack) {
         // Only zero X velocity on ground; in air, allow horizontal drift
         if (this.isGroundedStable) {
-            this.body.setVelocityX(this.body.velocity.x * 0.35);
+            this.body.setVelocityX(this.body.velocity.x * 0.5);
         }
         if (this.state === 'attack2_startup') {
             this.stateTimer -= dt;
@@ -555,7 +554,6 @@ class Player {
     _handleAirAttackState(dt) {
         if (this.state === 'air_attack_startup') {
             this.stateTimer -= dt;
-            this.body.velocity.y = Math.max(this.body.velocity.y, -40);
             if (this.stateTimer <= 0) {
                 this._enterState('air_attack_active');
             }
@@ -563,7 +561,7 @@ class Player {
         }
         if (this.state === 'air_attack_active') {
             this.stateTimer -= dt;
-            this.body.velocity.y += 340 * dt;
+            this.body.velocity.y += 180 * dt;
             this._updateAirHitbox();
             if (this.isGroundedStable || this.stateTimer <= 0) {
                 this._disableHitbox();
@@ -600,22 +598,8 @@ class Player {
         this.body.setDragX(0);
         this.body.setAccelerationX(0);
 
-        // Trail particles each frame
+        // Trail particles each frame (shadow cloak only)
         this._spawnDashTrail();
-
-        const dashFrameTimes = [0.00, 0.06, 0.13, 0.19];
-        const dashFrameKeys = ['player_dash_frame_0', 'player_dash_frame_3', 'player_dash_frame_7', 'player_dash_frame_11'];
-        let nextIndex = this.dashFrameIndex;
-        while (nextIndex < dashFrameTimes.length - 1 && this.dashFrameTimer >= dashFrameTimes[nextIndex + 1]) {
-            nextIndex++;
-        }
-        if (nextIndex !== this.dashFrameIndex || this.sprite.texture.key !== dashFrameKeys[nextIndex]) {
-            this.dashFrameIndex = nextIndex;
-            this._setTextureStable(dashFrameKeys[nextIndex]);
-            if (this.abilities.shadowCloak) {
-                this.sprite.setTint(this.dashProfile.trailColor);
-            }
-        }
 
         // Duration expired
         if (this.stateTimer <= 0) {
@@ -635,7 +619,8 @@ class Player {
     }
 
     _applyJumpGravity(dt, keys) {
-        const jumpHeld = keys.jump1.isDown || keys.jump2.isDown;
+        const jumpKey = keys.jump || keys.jump1 || keys.jump2;
+        const jumpHeld = jumpKey ? jumpKey.isDown : false;
         const body = this.body;
         const baseGravity = this.scene.physics.world.gravity.y;
         let gravityMult = 1;
@@ -658,18 +643,18 @@ class Player {
     }
 
     _spawnDashTrail() {
-        const dashProfile = this.dashProfile;
-        const isShadow = this.abilities.shadowCloak;
-        const count = isShadow ? 4 : 2;
-        const offX = this.facingRight ? -28 : 28;
+        if (!this.abilities.shadowCloak) return;
 
-        for (let i = 0; i < count; i++) {
+        const dashProfile = this.dashProfile;
+        const offX = this.facingRight ? -18 : 18;
+
+        for (let i = 0; i < 4; i++) {
             const trail = this.scene.add.circle(
-                this.sprite.x + offX + Phaser.Math.Between(-8, 8),
-                this.sprite.y + Phaser.Math.Between(-14, 14),
-                Phaser.Math.Between(2, isShadow ? 6 : 4),
+                this.sprite.x + offX + Phaser.Math.Between(-5, 5),
+                this.sprite.y + Phaser.Math.Between(-9, 9),
+                Phaser.Math.Between(2, 6),
                 dashProfile.trailColor,
-                isShadow ? 0.7 : 0.45
+                0.7
             );
             trail.setDepth(5);
             this.scene.tweens.add({
@@ -677,7 +662,7 @@ class Player {
                 alpha: 0,
                 scaleX: 0.05,
                 scaleY: 0.05,
-                duration: isShadow ? 340 : 180,
+                duration: 340,
                 ease: 'Power2',
                 onComplete: () => trail.destroy(),
             });
@@ -688,10 +673,10 @@ class Player {
         const count = 3;
         for (let i = 0; i < count; i++) {
             const angle = (Math.PI * 2 * i) / count + Phaser.Math.FloatBetween(-0.3, 0.3);
-            const dist = Phaser.Math.Between(30, 50);
+            const dist = Phaser.Math.Between(18, 30);
             const p = this.scene.add.circle(
-                this.sprite.x + Phaser.Math.Between(-8, 8),
-                this.sprite.y + Phaser.Math.Between(-8, 8),
+                this.sprite.x + Phaser.Math.Between(-5, 5),
+                this.sprite.y + Phaser.Math.Between(-5, 5),
                 Phaser.Math.Between(2, 4),
                 0xff3333,
                 0.9
@@ -713,16 +698,16 @@ class Player {
     _spawnLandingParticles() {
         for (let i = 0; i < 3; i++) {
             const p = this.scene.add.circle(
-                this.x + Phaser.Math.Between(-10, 10),
-                this.y + 10,
-                Phaser.Math.Between(1, 3),
+                this.x + Phaser.Math.Between(-6, 6),
+                this.y + 6,
+                Phaser.Math.Between(1, 2),
                 0x7FE0DE,
                 0.4
             ).setDepth(5);
             this.scene.tweens.add({
                 targets: p,
-                x: p.x + Phaser.Math.Between(-15, 15),
-                y: p.y + Phaser.Math.Between(5, 20),
+                x: p.x + Phaser.Math.Between(-10, 10),
+                y: p.y + Phaser.Math.Between(3, 12),
                 alpha: 0,
                 scale: 0.2,
                 duration: 300,
@@ -742,15 +727,15 @@ class Player {
     _getStateDuration(state) {
         const at60fps = frames => frames / 60;
         switch (state) {
-            case 'attack1_startup': return at60fps(4);   // unchanged
-            case 'attack1_active': return at60fps(7);    // was 5
-            case 'attack1_recovery': return at60fps(5);  // unchanged
-            case 'attack2_startup': return at60fps(3);   // was 5
-            case 'attack2_active': return at60fps(8);    // was 6
-            case 'attack2_recovery': return at60fps(5);  // was 6
-            case 'air_attack_startup': return at60fps(4);
-            case 'air_attack_active': return at60fps(16);
-            case 'air_attack_recovery': return at60fps(5);
+            case 'attack1_startup': return at60fps(3);
+            case 'attack1_active': return at60fps(4);
+            case 'attack1_recovery': return at60fps(4);
+            case 'attack2_startup': return at60fps(3);
+            case 'attack2_active': return at60fps(5);
+            case 'attack2_recovery': return at60fps(4);
+            case 'air_attack_startup': return at60fps(3);
+            case 'air_attack_active': return at60fps(8);
+            case 'air_attack_recovery': return at60fps(4);
             case 'dashing': return this.dashProfile.duration;
             case 'hurt': return 0.3;
             case 'dead': return 99;
@@ -845,16 +830,13 @@ class Player {
                 this.dashFrameIndex = 0;
                 this.sprite.body.setAllowGravity(false);
                 if (this.abilities.shadowCloak) {
-                    // Shadow cloak dash: use animated spritesheet
                     this.sprite.play('player_dash');
                     this.sprite.setTint(this.dashProfile.trailColor);
                 } else {
-                    // Normal dash: key-frame pose with motion blur trail (HK-style)
-                    this._setTextureStable('player_dash_frame_0');
+                    this.sprite.play('player_dash');
                     this.sprite.setTint(0x7FE0DE);
                 }
                 this._disableHitbox();
-                // HK-style camera snap on dash activation
                 this.scene.cameras.main.shake(this.abilities.shadowCloak ? 80 : 55, this.abilities.shadowCloak ? 0.004 : 0.003);
                 this.scene.sound.play('sfx_player_dash', { volume: 0.5 });
                 break;
@@ -879,9 +861,9 @@ class Player {
         const gap = 2;
         let w, h, oy;
         if (attackNum === 1) {
-            w = 20; h = 18; oy = 12;
+            w = 18; h = 16; oy = 11;
         } else {
-            w = 28; h = 22; oy = 10;
+            w = 24; h = 19; oy = 10;
         }
         this.slashHitbox.body.setSize(w, h);
         if (dir > 0) {
@@ -894,7 +876,7 @@ class Player {
 
     _updateAirHitbox() {
         const bw = this.body.width;
-        this.slashHitbox.body.setSize(bw - 8, 24);
+        this.slashHitbox.body.setSize(bw - 6, 22);
         this.slashHitbox.body.x = this.body.x + 2;
         this.slashHitbox.body.y = this.body.y + Math.floor(this.body.height * 0.55);
     }
@@ -908,16 +890,16 @@ class Player {
         for (let i = 0; i < 6; i++) {
             const p = this.scene.add.circle(
                 this.x,
-                this.y + 20,
-                Phaser.Math.Between(2, 5),
+                this.y + 12,
+                Phaser.Math.Between(1, 3),
                 0xffffff,
                 0.8
             );
             p.setDepth(15);
             this.scene.tweens.add({
                 targets: p,
-                x: p.x + Phaser.Math.Between(-30, 30),
-                y: p.y + Phaser.Math.Between(-30, 0),
+                x: p.x + Phaser.Math.Between(-18, 18),
+                y: p.y + Phaser.Math.Between(-18, 0),
                 alpha: 0,
                 duration: 400,
                 ease: 'Power2',
@@ -987,7 +969,41 @@ class Player {
         this.isAirborneStable = false;
         this.sprite.setAlpha(1);
         this.sprite.clearTint();
-        this.sprite.setScale(1.35);
+        this.sprite.setScale(0.85);
+        if (this.sprite.anims && this.sprite.anims.isPlaying) {
+            this.sprite.anims.stop();
+        }
+        this._setTextureStable('player_idle');
+        this.sprite.body.setAllowGravity(true);
+        this.sprite.body.reset(x, y);
+        this.sprite.setPosition(x, y);
+        this.body.setVelocity(0, 0);
+        this._disableHitbox();
+    }
+
+    /**
+     * Teleport the player without changing HP, feelings, or abilities.
+     * Used for room transitions and similar non-combat relocations.
+     */
+    teleport(x, y) {
+        this.dead = false;
+        this.jumpCount = 0;
+        this.state = 'idle';
+        this.dashUsedThisJump = false;
+        this.dashCooldownTimer = 0;
+        this.dashFrameTimer = 0;
+        this.dashFrameIndex = 0;
+        this.offGroundFrames = 0;
+        this.groundedFrames = 0;
+        this.airborneFrames = 0;
+        this.isGroundedStable = false;
+        this.isAirborneStable = false;
+        this.bufferAttack = -1;
+        this.jumpBufferTimer = 0;
+        this.coyoteTimer = 0;
+        this.sprite.setAlpha(1);
+        this.sprite.clearTint();
+        this.sprite.setScale(0.85);
         if (this.sprite.anims && this.sprite.anims.isPlaying) {
             this.sprite.anims.stop();
         }

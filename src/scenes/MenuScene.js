@@ -23,6 +23,7 @@ class MenuScene extends Phaser.Scene {
         this.inputEnabled = false;        // Disabled until stagger-in completes
         this.items = [];                 // { text, action, disabled }
         this.particles = [];             // { obj, speed, phase }
+        this.savePicker = null;
 
         // Defensive cleanup so returning from gameplay never leaves old BGM behind.
         ['bgm_menu', 'bgm_explore', 'bgm_boss_p1', 'bgm_boss_p2'].forEach((key) => {
@@ -67,24 +68,26 @@ class MenuScene extends Phaser.Scene {
 
     _buildBackground() {
         const bg = this.add.graphics().setDepth(0);
+        const w = this.scale.width;
+        const h = this.scale.height;
 
         // Solid dark fill
         bg.fillStyle(0x0a0a1a);
-        bg.fillRect(0, 0, 960, 720);
+        bg.fillRect(0, 0, w, h);
 
         // Subtle grid
         bg.lineStyle(1, 0x1a1a3e, 0.25);
-        for (let x = 0; x <= 960; x += 50) {
-            bg.lineBetween(x, 0, x, 720);
+        for (let x = 0; x <= w; x += 50) {
+            bg.lineBetween(x, 0, x, h);
         }
-        for (let y = 0; y <= 720; y += 50) {
-            bg.lineBetween(0, y, 960, y);
+        for (let y = 0; y <= h; y += 50) {
+            bg.lineBetween(0, y, w, y);
         }
 
         // Small decorative crosses at grid intersections
         bg.lineStyle(1, 0x1a1a3e, 0.15);
-        for (let x = 0; x <= 960; x += 50) {
-            for (let y = 0; y <= 720; y += 50) {
+        for (let x = 0; x <= w; x += 50) {
+            for (let y = 0; y <= h; y += 50) {
                 bg.fillStyle(0x1a1a3e, 0.2);
                 bg.fillRect(x - 1, y - 1, 3, 3);
             }
@@ -96,9 +99,11 @@ class MenuScene extends Phaser.Scene {
 
     _createParticles() {
         const colors = [0x44ccff, 0x9966ff, 0x66eeff];
+        const w = this.scale.width;
+        const h = this.scale.height;
         for (let i = 0; i < 40; i++) {
-            const x = Phaser.Math.Between(0, 960);
-            const y = Phaser.Math.Between(0, 720);
+            const x = Phaser.Math.Between(0, w);
+            const y = Phaser.Math.Between(0, h);
             const size = Phaser.Math.FloatBetween(1, 3);
             const color = Phaser.Utils.Array.GetRandom(colors);
             const speed = Phaser.Math.Between(20, 60);
@@ -126,8 +131,8 @@ class MenuScene extends Phaser.Scene {
 
             // Reset when off-screen top
             if (p.obj.y < -10) {
-                p.obj.y = 730;
-                p.obj.x = Phaser.Math.Between(0, 960);
+                p.obj.y = this.scale.height + 10;
+                p.obj.x = Phaser.Math.Between(0, this.scale.width);
             }
         }
     }
@@ -138,7 +143,7 @@ class MenuScene extends Phaser.Scene {
 
     _buildTitle() {
         // "SEKAI" with a glow-like shadow
-        const title = this.add.text(480, 180, 'SEKAI', {
+        const title = this.add.text(this.scale.width / 2, 180, 'SEKAI', {
             fontSize: '52px',
             fontFamily: 'monospace',
             color: '#a8d8ff',
@@ -163,7 +168,7 @@ class MenuScene extends Phaser.Scene {
         });
 
         // Subtitle
-        this.add.text(480, 252, 'A 25-ji Metroidvania', {
+        this.add.text(this.scale.width / 2, 252, 'A 25-ji Metroidvania', {
             fontSize: '16px',
             fontFamily: 'monospace',
             color: '#7FE0DE',
@@ -172,7 +177,7 @@ class MenuScene extends Phaser.Scene {
         // Decorative line under the title area
         const deco = this.add.graphics().setDepth(9);
         deco.lineStyle(1, 0x2a6a9f, 0.3);
-        deco.lineBetween(300, 300, 660, 300);
+        deco.lineBetween(this.scale.width / 2 - 180, 300, this.scale.width / 2 + 180, 300);
     }
 
     /* ------------------------------------------------------------------ */
@@ -180,19 +185,13 @@ class MenuScene extends Phaser.Scene {
     /* ------------------------------------------------------------------ */
 
     _buildMenuItems() {
-        const hasSave = (() => {
-            try {
-                const raw = localStorage.getItem('sekai_save');
-                return !!(raw && JSON.parse(raw));
-            } catch (_) { return false; }
-        })();
-
         const itemDefs = [
             { label: 'NEW GAME',  action: 'newGame',  disabled: false },
-            { label: 'CONTINUE',  action: 'continue', disabled: !hasSave },
+            { label: 'LOAD GAME', action: 'loadGame', disabled: false },
             { label: 'CREDITS',   action: 'credits',  disabled: false },
         ];
 
+        const centerX = this.scale.width / 2;
         const startY = 432;
         const gap = 60;
 
@@ -202,7 +201,7 @@ class MenuScene extends Phaser.Scene {
                 ? Object.assign({}, GAME_FONTS.menuDisabled)
                 : Object.assign({}, GAME_FONTS.menuItem);
 
-            const text = this.add.text(480, y, def.label, style)
+            const text = this.add.text(centerX, y, def.label, style)
                 .setOrigin(0.5)
                 .setDepth(10)
                 .setAlpha(0);
@@ -293,7 +292,7 @@ class MenuScene extends Phaser.Scene {
     /* ------------------------------------------------------------------ */
 
     _buildHint() {
-        const hint = this.add.text(480, 660, 'PRESS J TO START', {
+        const hint = this.add.text(this.scale.width / 2, this.scale.height - 60, 'PRESS J TO START', {
             fontSize: '14px',
             fontFamily: 'monospace',
             color: '#4a6a9f',
@@ -310,7 +309,7 @@ class MenuScene extends Phaser.Scene {
         });
 
         // Version number
-        this.add.text(950, 703, 'v0.5.0', {
+        this.add.text(this.scale.width - 26, this.scale.height - 17, 'v0.5.0', {
             fontSize: '12px',
             fontFamily: 'monospace',
             color: '#3a4a7a',
@@ -330,6 +329,8 @@ class MenuScene extends Phaser.Scene {
     }
 
     _handleInput() {
+        // Save picker is self-contained with its own key handlers
+        if (this.savePicker && !this.savePicker.destroyed) return;
         if (!this.inputEnabled) return;
 
         // Navigation — skip disabled items
@@ -378,8 +379,8 @@ class MenuScene extends Phaser.Scene {
             case 'newGame':
                 this._startNewGame();
                 break;
-            case 'continue':
-                this._continueGame();
+            case 'loadGame':
+                this._openLoadPicker();
                 break;
             case 'credits':
                 if (this.bgm) {
@@ -400,18 +401,31 @@ class MenuScene extends Phaser.Scene {
         }
     }
 
-    _continueGame() {
-        let saveData;
-        try {
-            const raw = localStorage.getItem('sekai_save');
-            if (!raw) { this.inputEnabled = true; return; }
-            saveData = JSON.parse(raw);
-        } catch (_) {
-            this.inputEnabled = true;
-            return;
-        }
+    _openLoadPicker() {
+        this.inputEnabled = false;
+        this.savePicker = new SaveSlotPicker(this, {
+            mode: 'load',
+            onSelect: (slotIndex) => {
+                this.savePicker = null;
+                let saveData;
+                try {
+                    const raw = localStorage.getItem(`sekai_save_${slotIndex}`);
+                    if (raw) saveData = JSON.parse(raw);
+                } catch (_) {}
+                if (saveData) {
+                    this._transitionToGame(saveData);
+                } else {
+                    this.inputEnabled = true;
+                }
+            },
+            onCancel: () => {
+                this.savePicker = null;
+                this.inputEnabled = true;
+            },
+        });
+    }
 
-        // Audio — start game SFX, fade BGM out
+    _transitionToGame(saveData) {
         this.sound.play('sfx_ui_start', { volume: 0.55 });
         if (this.bgm) {
             this.tweens.add({
@@ -421,10 +435,7 @@ class MenuScene extends Phaser.Scene {
                 onComplete: () => { this.bgm.stop(); this.bgm.destroy(); this.bgm = null; },
             });
         }
-
-        // Brief flash then transition with save data
         this.cameras.main.flash(200, 255, 255, 255);
-
         this.time.delayedCall(300, () => {
             SceneManager.goTo(this, 'GameScene', { loadSave: saveData });
         });

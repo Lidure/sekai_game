@@ -22,8 +22,12 @@ class BossScene extends Phaser.Scene {
         this._createInput();
 
         this.cameras.main.setBounds(0, 0, this.arenaW, this.arenaH);
-        this.cameras.main.startFollow(this.player.sprite, true, 0.1, 0.1);
-        this.cameras.main.setDeadzone(100, 50);
+        this.cameras.main.setZoom(0.98);
+        this.cameras.main.startFollow(this.player.sprite, true, 0.12, 0.12);
+        this.cameras.main.setDeadzone(140, 76);
+        this._cameraLookOffsetY = 0;
+        this._cameraLookTargetOffsetY = 0;
+        this._baseCameraOffsetY = 0;
 
         this.bossDefeated = false;
         this.playerDied = false;
@@ -102,9 +106,6 @@ class BossScene extends Phaser.Scene {
         this.physics.add.collider(
             this.player.sprite,
             this.arenaPlatforms,
-            null,
-            this._shouldPlayerCollideWithPlatform,
-            this,
         );
         this.physics.add.collider(this.boss.sprite, this.arenaPlatforms);
 
@@ -121,15 +122,8 @@ class BossScene extends Phaser.Scene {
         );
     }
 
-    _shouldPlayerCollideWithPlatform(playerSprite, platform) {
-        const body = playerSprite.body;
-        const platformBody = platform.body;
-        const previousBottom = body.bottom - body.deltaY();
-        return body.velocity.y >= 0 && previousBottom <= platformBody.top + 8;
-    }
-
     _createUI() {
-        this.hud = new HUD(this);
+        this.hud = this.scene.get('HUDScene');
     }
 
     _createInput() {
@@ -138,29 +132,46 @@ class BossScene extends Phaser.Scene {
             right: this.input.keyboard.addKey('D'),
             up: this.input.keyboard.addKey('W'),
             down: this.input.keyboard.addKey('S'),
-            jump1: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP),
-            jump2: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
             attack: this.input.keyboard.addKey('J'),
-            attack2: this.input.keyboard.addKey('Z'),
-            dash1: this.input.keyboard.addKey('K'),
-            dash2: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT),
+            jump: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.K),
+            dash: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.L),
         };
 
         this._attackHandlerJ = () => {
             if (this.pauseMenu && this.pauseMenu.isPaused) return;
             this.player.attackPressed();
         };
-        this._attackHandlerZ = () => {
-            if (this.pauseMenu && this.pauseMenu.isPaused) return;
-            this.player.attackPressed();
-        };
-
         this.input.keyboard.on('keydown-J', this._attackHandlerJ);
-        this.input.keyboard.on('keydown-Z', this._attackHandlerZ);
         this.events.once('shutdown', () => {
             this.input.keyboard.off('keydown-J', this._attackHandlerJ);
-            this.input.keyboard.off('keydown-Z', this._attackHandlerZ);
         });
+    }
+
+    _updateCameraLook(delta) {
+        const cam = this.cameras.main;
+        if (!cam || !this.keys) return;
+
+        const canLook = !this.pauseMenu?.isPaused && this.player && !this.player.dead;
+        if (!canLook) {
+            this._cameraLookTargetOffsetY = 0;
+        } else {
+            const lookingUp = this.keys.up && this.keys.up.isDown;
+            const lookingDown = this.keys.down && this.keys.down.isDown;
+            if (lookingUp && !lookingDown) {
+                this._cameraLookTargetOffsetY = 160;
+            } else if (lookingDown && !lookingUp) {
+                this._cameraLookTargetOffsetY = -220;
+            } else {
+                this._cameraLookTargetOffsetY = 0;
+            }
+        }
+
+        const t = Math.min(1, (delta / 1000) * 18);
+        this._cameraLookOffsetY = Phaser.Math.Linear(this._cameraLookOffsetY, this._cameraLookTargetOffsetY, t);
+        if (Math.abs(this._cameraLookOffsetY - this._cameraLookTargetOffsetY) < 0.25) {
+            this._cameraLookOffsetY = this._cameraLookTargetOffsetY;
+        }
+        cam.setFollowOffset(0, this._baseCameraOffsetY + this._cameraLookOffsetY);
     }
 
     _onPlayerHitBoss() {
@@ -243,6 +254,7 @@ class BossScene extends Phaser.Scene {
         this.pauseMenu.update();
         if (this.pauseMenu.isPaused) return;
 
+        this._updateCameraLook(delta);
         if (this.bossDefeated || this.playerDied) return;
 
         this.player.update(delta);
@@ -335,7 +347,7 @@ class BossScene extends Phaser.Scene {
         if (this.bgmPhase1) { this.bgmPhase1.stop(); this.bgmPhase1.destroy(); this.bgmPhase1 = null; }
         if (this.bgmPhase2) { this.bgmPhase2.stop(); this.bgmPhase2.destroy(); this.bgmPhase2 = null; }
 
-        const victoryText = this.add.text(800, 200, 'MEMORY FRAGMENT\nACQUIRED', {
+        const victoryText = this.add.text(this.arenaW / 2, 200, 'MEMORY FRAGMENT\nACQUIRED', {
             fontSize: '34px',
             fontFamily: 'monospace',
             color: '#a8d8ff',

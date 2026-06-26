@@ -2,7 +2,7 @@
  * GameScene — Main gameplay scene.
  *
  * Refactored to room-based architecture (March 2026):
- *   - 8 rooms of 800×600 each (shaft is 600×800)
+ *   - 8 rooms of 1280×720 each (shaft scales proportionally)
  *   - Room transitions via fade-out/fade-in
  *   - All room-specific objects rebuilt per room
  *   - Save/load stores roomId + local player position
@@ -10,6 +10,16 @@
  * Design doc: Room-based metroidvania with ability-gated progression.
  * Original: Single 4400×600 scrolling world.
  */
+/**
+ * Camera profiles for different room types.
+ * Each profile controls zoom, deadzone, follow lerp, and y-offset.
+ */
+const CameraProfiles = {
+    default: { zoom: 2.6, deadzoneX: 70, deadzoneY: 52, lerpX: 0.10, lerpY: 0.09, yOffset: -24 },
+    shaft:   { zoom: 1.6, deadzoneX: 80, deadzoneY: 53, lerpX: 0.08, lerpY: 0.07, yOffset: -32 },
+    boss:    { zoom: 1.3, deadzoneX: 106, deadzoneY: 57, lerpX: 0.12, lerpY: 0.12, yOffset: -8 },
+};
+
 class GameScene extends Phaser.Scene {
     constructor() {
         super('GameScene');
@@ -40,8 +50,12 @@ class GameScene extends Phaser.Scene {
         this.cameras.main.setZoom(1);
         this.cameras.main.setBackgroundColor('#0a0a1a');
 
+        // Persistent chapter backdrop
+        this._buildChapterBackground();
+
         // UI systems
-        this.hud = new HUD(this);
+        this.scene.launch('HUDScene');
+        this.hud = this.scene.get('HUDScene');
         this.pauseMenu = new PauseMenu(this);
         this.mapView = new MapView(this);
 
@@ -68,6 +82,7 @@ class GameScene extends Phaser.Scene {
 
         // Clean up on shutdown
         this.events.once('shutdown', () => {
+            this.scene.stop('HUDScene');
             this._stopBgm();
         });
     }
@@ -82,6 +97,9 @@ class GameScene extends Phaser.Scene {
         this._roomColliders = [];
         this._transitioning = false;
         this._isLoadingRoom = false;
+        this._spawnLockFrames = 0;
+        this._cameraLookOffsetY = 0;
+        this._cameraLookTargetOffsetY = 0;
 
         // Persistent state (survives room transitions)
         this.bossActive = false;
@@ -91,21 +109,19 @@ class GameScene extends Phaser.Scene {
         this.enemiesKilled = [];
         this.collectedPersistentItems = [];
         this.abilityItemsCollected = [];
-        this._usedBenchKeys = [];
         this._bossTriggered = false;
         this._bossDefeated = false;
 
         // Room-scoped arrays (rebuilt per room)
         this.enemyInstances = [];
-        this.benches = [];
         this.npcs = [];
         this.collectibles = [];
-        this.platforms = null;
         this.enemyGroup = null;
         this.collectibleGroup = null;
         this.abilityItems = [];
         this.abilityGates = [];
-        this.oneWayDoorZone = null;
+        this._oneWayDoorZones = [];
+        this._oneWayDoorGraphics = [];
         this.bossTriggerZone = null;
 
         // Decoration arrays
@@ -121,13 +137,25 @@ class GameScene extends Phaser.Scene {
         this.bgMid = null;
         this.bgNear = null;
         this.bgTint = null;
+        this.bgWash = null;
+        this.chapterBg = null;
+        this.chapterBgParallax = 0.18;
         this.roomContainer = null;
         this.roomBgContainer = null;
-        this._oneWayDoorGfx = null;
+        this._roomBoundaryGfx = null;
+        this._oneWayDoorGraphics = [];
         this._roomBanner = null;
         this._roomBannerTimer = null;
+        this._platformLineGfx = null;
         this.exitZones = [];
         this._exitMarkers = [];
+
+        // Hit-stop freeze frame counter (0 = not frozen)
+        this._hitStopFrames = 0;
+
+        // Landing bounce tracking
+        this._lastAirborne = false;
+        this._fallStartY = 0;
     }
 
     /** Convenience: get RoomDef for a room ID. */
@@ -162,7 +190,7 @@ class GameScene extends Phaser.Scene {
         }
 
         if (result.victory) {
-            this.player.heal(30);
+            this.player.heal(15);
             this.player.feelings = Math.min(this.player.feelingsMax, this.player.feelings + 20);
             this._bossDefeated = true;
         }
@@ -186,7 +214,7 @@ class GameScene extends Phaser.Scene {
         }
 
         // Show GAME OVER text centered on screen (fixed to camera)
-        const goText = this.add.text(480, 360, 'GAME OVER', {
+        const goText = this.add.text(this.scale.width / 2, this.scale.height / 2, 'GAME OVER', {
             fontSize: '38px',
             fontFamily: 'monospace',
             color: '#ff6666',
@@ -232,78 +260,195 @@ class GameScene extends Phaser.Scene {
     /* ================================================================== */
 
     /**
-     * Build all room content from a RoomDef.
-     * Destroys previous room content first if any.
+     * Build all room content from a RoomDef + tilemap.
+     * Tilemap .tmj files contain all geometry (tile layers) and
+     * entity spawn points (object layers). Destroys previous room first.
      */
     _buildRoom(roomDef) {
-        // Set physics world bounds
-        this.physics.world.setBounds(0, 0, roomDef.width, roomDef.height);
-        this.cameras.main.setBounds(0, 0, roomDef.width, roomDef.height);
+        // ── Load tilemap ──
+        const map = this.make.tilemap({ key: roomDef.tilemapKey });
+        const tileset = map.addTilesetImage(roomDef.groundTexture, roomDef.groundTexture);
+        const TILE_OFFSET_Y = -16;
 
-        // Room containers for cleanup
+        this._tileGround = map.createLayer('Ground', tileset, 0, TILE_OFFSET_Y + 8);
+        this._tilePlatforms = map.createLayer('Platforms', tileset, 0, 0);
+        this._tileGround.setCollisionByProperty({ collides: true });
+        this._tilePlatforms.setCollisionByProperty({ collides: true });
+        this._tilePlatforms.setAlpha(0);
+
+        this._roomPixelWidth = map.widthInPixels;
+        this._roomPixelHeight = map.heightInPixels;
+        this._currentTilemap = map;
+
+        // ── Physics & camera bounds ──
+        this.physics.world.setBounds(0, 0, this._roomPixelWidth, this._roomPixelHeight);
+        this.cameras.main.setBounds(0, 0, this._roomPixelWidth, this._roomPixelHeight);
+
+        // ── Room containers ──
         this.roomBgContainer = this.add.container(0, 0).setDepth(-20);
         this.roomContainer = this.add.container(0, 0).setDepth(0);
 
-        // Background (3 parallax layers + tint overlay)
+        // ── Parse object layers FIRST (populates this._spawn*) ──
+        this._parseObjectLayers(map);
+
+        // ── Background ──
         this._buildBackground(roomDef);
+        this._setupRoomBoundary(roomDef);
 
-        // Platforms (ground + elevated)
-        this.platforms = this.physics.add.staticGroup();
-        this._buildGround(roomDef);
-        this._buildPlatforms(roomDef);
+        // ── Player-platform collider ──
+        const pGnd = this.physics.add.collider(this.player.sprite, this._tileGround);
+        const pPlat = this.physics.add.collider(this.player.sprite, this._tilePlatforms);
+        this._roomColliders.push(pGnd, pPlat);
 
-        // Player-platform collider (recreated each room)
-        const pCollider = this.physics.add.collider(
-            this.player.sprite,
-            this.platforms,
-            null,
-            this._shouldPlayerCollideWithPlatform,
-            this,
-        );
-        this._roomColliders.push(pCollider);
+        // ── Thin platform visuals ──
+        this._drawPlatformVisuals();
 
-        // Enemies
+        // ── Enemies ──
         this.enemyGroup = this.physics.add.group();
         this.enemyInstances = [];
-        this._buildEnemies(roomDef);
+        this._buildEnemiesFromSpawns();
 
-        // Benches
-        this.benches = [];
-        this._buildBenches(roomDef);
-
-        // NPCs
+        // ── NPCs ──
         this.npcs = [];
-        this._buildNPCs(roomDef);
+        this._buildNPCsFromSpawns();
 
-        // Collectibles
+        // ── Collectibles ──
         this.collectibles = [];
         if (this.collectibleGroup) this.collectibleGroup.destroy(true);
         this.collectibleGroup = this.physics.add.staticGroup();
-        this._buildCollectibles(roomDef);
+        this._buildCollectiblesFromSpawns();
 
-        // Ability items
+        // ── Ability items ──
         this.abilityItems = [];
-        this._buildAbilityItems(roomDef);
+        this._buildAbilityItemsFromSpawns();
 
-        // Ability gates
+        // ── Ability gates ──
         this.abilityGates = [];
-        this._buildAbilityGates(roomDef);
+        this._buildGatesFromSpawns();
 
-        // One-way doors
-        this._buildOneWayDoors(roomDef);
+        // ── One-way doors ──
+        this._buildDoorsFromSpawns();
 
-        // Boss trigger
-        this._buildBossTrigger(roomDef);
+        // ── Boss trigger ──
+        this._buildBossTriggerFromSpawns();
 
-        // Decorations (visual only)
-        this._buildDecorations(roomDef);
-        this._buildExitMarkers(roomDef);
+        // ── Decorations ──
+        this._buildDecorationsFromSpawns(roomDef);
 
-        // Camera follow behavior
+        // ── Exit markers ──
+        this._buildExitMarkers();
+
+        // ── Camera ──
         this._setupCameraForRoom(roomDef);
 
-        // Room banner
+        // ── Banner ──
         this._showRoomBanner(roomDef.name);
+    }
+
+    /**
+     * Parse all object layers from the current tilemap into this._spawn* arrays.
+     */
+    _parseObjectLayers(map) {
+        this._roomExits = [];
+        this._spawnEnemies = [];
+        this._spawnCollectibles = [];
+        this._spawnBenches = [];
+        this._spawnNPCs = [];
+        this._spawnAbilityItems = [];
+        this._spawnGates = [];
+        this._spawnDoors = [];
+        this._spawnStalactites = [];
+        this._spawnCrystals = [];
+        this._spawnTorches = [];
+        this._spawnVines = [];
+        this._bossTriggerRect = null;
+
+        // Exits layer
+        const exitLayer = map.getObjectLayer('Exits');
+        if (exitLayer) {
+            for (const obj of exitLayer.objects) {
+                const p = this._tiledProps(obj);
+                this._roomExits.push({
+                    x: obj.x, y: obj.y, w: obj.width, h: obj.height,
+                    dir: p.dir || obj.name, targetRoom: p.targetRoom,
+                    targetX: p.targetX, targetY: p.targetY,
+                });
+            }
+        }
+
+        // SpawnPoints layer
+        const spawnLayer = map.getObjectLayer('SpawnPoints');
+        if (spawnLayer) {
+            for (const obj of spawnLayer.objects) {
+                const p = this._tiledProps(obj);
+                switch (p.spawnType) {
+                    case 'enemy':
+                        this._spawnEnemies.push({ id: p.spawnId, type: p.enemyType, x: obj.x, y: obj.y, noGravity: p.noGravity });
+                        break;
+                    case 'collectible':
+                        this._spawnCollectibles.push({ type: p.collectType, saveId: p.saveId, x: obj.x, y: obj.y, value: p.value, persistent: p.persistent });
+                        break;
+                    case 'bench':
+                        this._spawnBenches.push({ x: obj.x });
+                        break;
+                    case 'npc':
+                        this._spawnNPCs.push({ x: obj.x, y: obj.y, name: p.npcName, hairColor: p.hairColor, dialogues: JSON.parse(p.dialogues || '[]') });
+                        break;
+                    case 'abilityItem':
+                        this._spawnAbilityItems.push({ x: obj.x, y: obj.y, key: p.abilityKey, name: p.abilityName });
+                        break;
+                }
+            }
+        }
+
+        // Gates layer
+        const gateLayer = map.getObjectLayer('Gates');
+        if (gateLayer) {
+            for (const obj of gateLayer.objects) {
+                const p = this._tiledProps(obj);
+                this._spawnGates.push({ x: obj.x, y: obj.y, w: obj.width, h: obj.height, key: p.abilityKey });
+            }
+        }
+
+        // Doors layer
+        const doorLayer = map.getObjectLayer('Doors');
+        if (doorLayer) {
+            for (const obj of doorLayer.objects) {
+                const p = this._tiledProps(obj);
+                this._spawnDoors.push({ x: obj.x, y: obj.y, w: obj.width, h: obj.height });
+            }
+        }
+
+        // Decorations layer
+        const decoLayer = map.getObjectLayer('Decorations');
+        if (decoLayer) {
+            for (const obj of decoLayer.objects) {
+                const p = this._tiledProps(obj);
+                switch (p.decoType) {
+                    case 'stalactite': this._spawnStalactites.push({ x: obj.x, h: p.h }); break;
+                    case 'crystal': this._spawnCrystals.push({ x: obj.x, y: obj.y }); break;
+                    case 'torch': this._spawnTorches.push({ x: obj.x, y: obj.y }); break;
+                    case 'vine': this._spawnVines.push({ x: obj.x }); break;
+                }
+            }
+            const bossObj = decoLayer.objects.find(o => o.type === 'bossTrigger');
+            if (bossObj) {
+                this._bossTriggerRect = { x: bossObj.x, y: bossObj.y, w: bossObj.width, h: bossObj.height };
+            }
+        }
+    }
+
+    /**
+     * Convert Tiled properties array to a plain object.
+     * Tiled JSON format stores properties as [{ name, type, value }, ...]
+     */
+    _tiledProps(obj) {
+        if (!obj || !obj.properties) return {};
+        const out = {};
+        for (const prop of obj.properties) {
+            out[prop.name] = prop.value;
+        }
+        return out;
     }
 
     /**
@@ -320,7 +465,6 @@ class GameScene extends Phaser.Scene {
         }
 
         // Destroy physics groups
-        if (this.platforms) { this.platforms.destroy(true); this.platforms = null; }
         if (this.enemyGroup) { this.enemyGroup.destroy(true); this.enemyGroup = null; }
         if (this.collectibleGroup) { this.collectibleGroup.destroy(true); this.collectibleGroup = null; }
 
@@ -331,12 +475,6 @@ class GameScene extends Phaser.Scene {
                 if (e.sprite && e.sprite.active) e.sprite.destroy();
             });
             this.enemyInstances = [];
-        }
-
-        // Destroy benches
-        if (this.benches) {
-            this.benches.forEach(b => b.destroy());
-            this.benches = [];
         }
 
         // Destroy NPCs
@@ -363,14 +501,14 @@ class GameScene extends Phaser.Scene {
             this.abilityGates = [];
         }
 
-        // Destroy one-way door zone + graphics
-        if (this.oneWayDoorZone) {
-            this.oneWayDoorZone.destroy();
-            this.oneWayDoorZone = null;
+        // Destroy one-way door zones + graphics
+        if (this._oneWayDoorZones) {
+            this._oneWayDoorZones.forEach(z => z.destroy());
+            this._oneWayDoorZones = [];
         }
-        if (this._oneWayDoorGfx) {
-            this._oneWayDoorGfx.destroy();
-            this._oneWayDoorGfx = null;
+        if (this._oneWayDoorGraphics) {
+            this._oneWayDoorGraphics.forEach(g => g.destroy());
+            this._oneWayDoorGraphics = [];
         }
 
         // Destroy boss trigger zone
@@ -392,7 +530,10 @@ class GameScene extends Phaser.Scene {
         if (this.bgFar) { this.bgFar.destroy(); this.bgFar = null; }
         if (this.bgMid) { this.bgMid.destroy(); this.bgMid = null; }
         if (this.bgNear) { this.bgNear.destroy(); this.bgNear = null; }
+        if (this.bgWash) { this.bgWash.destroy(); this.bgWash = null; }
         if (this.bgTint) { this.bgTint.destroy(); this.bgTint = null; }
+        if (this._roomBoundaryGfx) { this._roomBoundaryGfx.destroy(); this._roomBoundaryGfx = null; }
+        if (this._platformLineGfx) { this._platformLineGfx.destroy(); this._platformLineGfx = null; }
 
         // Destroy containers
         if (this.roomContainer) { this.roomContainer.destroy(true); this.roomContainer = null; }
@@ -422,7 +563,7 @@ class GameScene extends Phaser.Scene {
      * @param {number} spawnX - Local X position in target room
      * @param {number} spawnY - Local Y position in target room
      */
-    _transitionToRoom(targetRoomId, spawnX, spawnY) {
+    _transitionToRoom(targetRoomId, spawnX, spawnY, fromDir = null) {
         if (this._transitioning) return;
 
         const roomDef = this._roomDef(targetRoomId);
@@ -433,8 +574,8 @@ class GameScene extends Phaser.Scene {
 
         this._transitioning = true;
 
-        // Fade to black
-        this.cameras.main.fadeOut(200, 0, 0, 0);
+        // Ultra-fast black cut (80ms each way, 4f spawn lock) — closer to HK transitions
+        this.cameras.main.fadeOut(80, 0, 0, 0);
         this.cameras.main.once('camerafadeoutcomplete', () => {
             // Clear old room
             this._clearRoom();
@@ -448,21 +589,31 @@ class GameScene extends Phaser.Scene {
             // Build new room
             this._buildRoom(roomDef);
 
-            // Position player
-            this.player.x = spawnX;
-            this.player.y = spawnY;
-            this.player.sprite.setPosition(spawnX, spawnY);
-            if (this.player.body) {
-                this.player.body.reset(spawnX, spawnY);
-                this.player.body.setVelocity(0, 0);
-            }
+            const entranceY = this._getRoomEntranceY(roomDef, spawnY, fromDir);
 
-            // Fade in
-            this.cameras.main.fadeIn(200, 0, 0, 0);
+            // Position player
+            this.player.teleport(spawnX, entranceY);
+            this._spawnLockFrames = 4;
+
+            // Quick return from black
+            this.cameras.main.fadeIn(80, 0, 0, 0);
             this.cameras.main.once('camerafadeincomplete', () => {
                 this._transitioning = false;
             });
         });
+    }
+
+    /**
+     * Horizontal exits should re-enter on top of the target room's floor.
+     * This avoids relying on hand-authored targetY values, which can drift
+     * below the collider after scaling or body reset.
+     */
+    _getRoomEntranceY(roomDef, spawnY, fromDir) {
+        if (!roomDef || !this.player || !this.player.sprite) return spawnY;
+        if (fromDir !== 'left' && fromDir !== 'right') return spawnY;
+
+        const roomH = this._roomPixelHeight || roomDef.height || 720;
+        return Math.max(0, Math.min(spawnY, roomH - 120));
     }
 
     /**
@@ -472,23 +623,16 @@ class GameScene extends Phaser.Scene {
     _checkExits() {
         if (this._transitioning || !this.player) return;
         if (this.player.isHurt || this.player.dead) return;
-
-        const roomDef = this._roomDef(this.currentRoomId);
-        if (!roomDef || !roomDef.exits || roomDef.exits.length === 0) return;
+        if (!this._roomExits || this._roomExits.length === 0) return;
 
         const px = this.player.x;
         const py = this.player.y;
         const margin = 20;
 
-        for (const exit of roomDef.exits) {
-            const ex = exit.x;
-            const ey = exit.y;
-            const ew = exit.w;
-            const eh = exit.h;
-
-            if (px > ex - margin && px < ex + ew + margin &&
-                py > ey - margin && py < ey + eh + margin) {
-                this._transitionToRoom(exit.targetRoom, exit.targetX, exit.targetY);
+        for (const exit of this._roomExits) {
+            if (px > exit.x - margin && px < exit.x + exit.w + margin &&
+                py > exit.y - margin && py < exit.y + exit.h + margin) {
+                this._transitionToRoom(exit.targetRoom, exit.targetX, exit.targetY, exit.dir);
                 return;
             }
         }
@@ -496,110 +640,145 @@ class GameScene extends Phaser.Scene {
 
     /**
      * Set up camera follow behavior based on room size.
-     * Rooms exactly 800×600 (matching viewport) don't scroll.
-     * Larger rooms (shaft: 600×800) allow vertical follow.
+     * Rooms exactly matching the viewport do not scroll.
+     * Larger rooms allow follow on the over-sized axis.
      */
     _setupCameraForRoom(roomDef) {
-        const followX = roomDef.width > 800;
-        const followY = roomDef.height > 600;
-        if (followX || followY) {
-            this.cameras.main.startFollow(this.player.sprite, followX, followY, 0.1, 0.1);
-            this.cameras.main.setDeadzone(100, 50);
+        const cam = this.cameras.main;
+
+        // Select profile based on room type
+        let profile;
+        if (roomDef.id === 'shaft') {
+            profile = CameraProfiles.shaft;
+        } else if (roomDef.id === 'boss') {
+            profile = CameraProfiles.boss;
         } else {
-            this.cameras.main.stopFollow();
-            this.cameras.main.scrollX = 0;
-            this.cameras.main.scrollY = 0;
+            profile = CameraProfiles.default;
         }
+
+        cam.setZoom(profile.zoom);
+
+        // The current chapter uses room-sized spaces, so follow the player in
+        // every room and keep the camera biased slightly above them.
+        cam.startFollow(this.player.sprite, true, true, profile.lerpX, profile.lerpY);
+        cam.setDeadzone(profile.deadzoneX, profile.deadzoneY);
+        cam.setFollowOffset(0, profile.yOffset);
+
+        this._cameraLookOffsetY = 0;
+        this._cameraLookTargetOffsetY = 0;
+        this._currentCameraProfile = profile;
+    }
+
+    _updateCameraLook(delta) {
+        const cam = this.cameras.main;
+        const profile = this._currentCameraProfile;
+        if (!cam || !profile || !this.keys) return;
+
+        const canLook = !this.pauseMenu?.isPaused && !this.isResting && !this.isTalking && this.player && !this.player.dead;
+        if (!canLook) {
+            this._cameraLookTargetOffsetY = 0;
+        } else {
+            const lookingUp = this.keys.up && this.keys.up.isDown;
+            const lookingDown = this.keys.down && this.keys.down.isDown;
+            if (lookingUp && !lookingDown) {
+                this._cameraLookTargetOffsetY = 160;
+            } else if (lookingDown && !lookingUp) {
+                this._cameraLookTargetOffsetY = -220;
+            } else {
+                this._cameraLookTargetOffsetY = 0;
+            }
+        }
+
+        const t = Math.min(1, (delta / 1000) * 18);
+        this._cameraLookOffsetY = Phaser.Math.Linear(this._cameraLookOffsetY, this._cameraLookTargetOffsetY, t);
+        if (Math.abs(this._cameraLookOffsetY - this._cameraLookTargetOffsetY) < 0.25) {
+            this._cameraLookOffsetY = this._cameraLookTargetOffsetY;
+        }
+        cam.setFollowOffset(0, profile.yOffset + this._cameraLookOffsetY);
     }
 
     /* ================================================================== */
     /*  Room builder: Background                                             */
     /* ================================================================== */
 
+    _buildChapterBackground() {
+        if (!this.textures.exists('broken_seikai_bg')) return;
+        if (this.chapterBg) return;
+
+        const bgSource = this.textures.get('broken_seikai_bg').getSourceImage();
+        const bgWidth = bgSource && bgSource.width ? bgSource.width : this.scale.width;
+        const bgHeight = bgSource && bgSource.height ? bgSource.height : this.scale.height;
+        const coverScale = Math.max(this.scale.width / bgWidth, this.scale.height / bgHeight);
+
+        this.chapterBgParallax = 0.18;
+        this.chapterBg = this.add.tileSprite(0, 0, this.scale.width, this.scale.height, 'broken_seikai_bg')
+            .setOrigin(0, 0)
+            .setScrollFactor(0)
+            .setDepth(-5)
+            .setAlpha(0.98);
+        this.chapterBg.tileScaleX = coverScale;
+        this.chapterBg.tileScaleY = coverScale;
+
+        this._updateChapterBackground();
+    }
+
+    /**
+     * Convert the current room + camera scroll into a continuous chapter-space X.
+     * This keeps horizontally connected rooms aligned to the same background phase
+     * instead of restarting the pattern at each room boundary.
+     */
+    _getChapterScrollX() {
+        const cam = this.cameras && this.cameras.main ? this.cameras.main : null;
+        if (!cam) return 0;
+
+        const roomIndex = Math.max(0, RoomDef.ROOM_ORDER.indexOf(this.currentRoomId));
+        const roomStride = this._roomPixelWidth || this.scale.width || 1280;
+        return roomIndex * roomStride + cam.scrollX;
+    }
+
+    _updateChapterBackground() {
+        if (!this.chapterBg) return;
+        this.chapterBg.tilePositionX = this._getChapterScrollX() * this.chapterBgParallax;
+    }
+
     _buildBackground(roomDef) {
-        const w = roomDef.width;
-        const h = roomDef.height;
-
-        const isFirstChapter = this.textures.exists('broken_seikai_bg');
-        if (isFirstChapter) {
-            this.bgFar = this.add.tileSprite(0, 0, w, h, 'broken_seikai_bg')
-                .setOrigin(0, 0).setScrollFactor(0.04).setDepth(-4);
-            this.bgFar.setTileScale(0.75, 0.75);
-            this.bgMid = this.add.rectangle(w / 2, h / 2, w, h, 0x04060c, 0.20)
-                .setDepth(-3);
-            this.bgNear = this.add.tileSprite(0, 0, w, h, 'bg_near')
-                .setOrigin(0, 0).setScrollFactor(0.2).setDepth(-2);
-        } else {
-            this.bgFar = this.add.tileSprite(0, 0, w, h, 'bg_far')
-                .setOrigin(0, 0).setScrollFactor(0.05).setDepth(-3);
-            this.bgMid = this.add.tileSprite(0, 0, w, h, 'bg_mid')
-                .setOrigin(0, 0).setScrollFactor(0.15).setDepth(-2);
-            this.bgNear = this.add.tileSprite(0, 0, w, h, 'bg_near')
-                .setOrigin(0, 0).setScrollFactor(0.3).setDepth(-1);
-        }
-
+        const w = this._roomPixelWidth || roomDef.width;
+        const h = this._roomPixelHeight || roomDef.height;
+        const tintAlpha = roomDef.id === 'intro'
+            ? Math.min(roomDef.tint ? roomDef.tint.alpha : 0, 0.04)
+            : Math.min(roomDef.tint ? roomDef.tint.alpha : 0, 0.10);
         if (roomDef.tint) {
-            this.bgTint = this.add.rectangle(w / 2, h / 2, w, h, roomDef.tint.color, roomDef.tint.alpha)
+            this.bgTint = this.add.rectangle(w / 2, h / 2, w, h, roomDef.tint.color, tintAlpha)
                 .setDepth(1);
         }
     }
 
-    /* ================================================================== */
-    /*  Room builder: Ground & Platforms                                     */
-    /* ================================================================== */
-
-    /**
-     * Build ground tiles from roomDef.ground data.
-     * ground: [{ x: tileCol, w: tileCount }]
-     * Each tile is 64×64, placed at center positions.
-     * Ground Y = 720 - 32 = 688 (center of bottom tile row).
-     */
-    _buildGround(roomDef) {
-        if (!roomDef.ground) return;
-        const groundY = 688;
-
-        for (const g of roomDef.ground) {
-            for (let i = 0; i < g.w; i++) {
-                const tile = this.platforms.create(
-                    g.x * 64 + i * 64 + 32,
-                    groundY,
-                    roomDef.groundTexture,
-                );
-                tile.setDisplaySize(64, 64);
-                tile.refreshBody();
-            }
-        }
-    }
-
-    /**
-     * Build elevated platforms from roomDef.platforms data.
-     * platforms: [{ x: leftEdgePx, y: centerY, w: tileCount }]
-     */
-    _buildPlatforms(roomDef) {
-        if (!roomDef.platforms) return;
-
-        for (const p of roomDef.platforms) {
-            for (let i = 0; i < p.w; i++) {
-                const tile = this.platforms.create(
-                    p.x + i * 64 + 32,
-                    p.y,
-                    roomDef.groundTexture,
-                );
-                tile.setDisplaySize(64, 64);
-                tile.refreshBody();
-            }
-        }
+    _drawPlatformVisuals() {
+        if (!this._tilePlatforms) return;
+        this._platformLineGfx = this.add.graphics().setDepth(2);
+        this._tilePlatforms.forEachTile(tile => {
+            if (tile.index === -1) return;
+            const px = tile.pixelX;
+            const py = tile.pixelY;
+            const tw = tile.width;
+            const th = tile.height;
+            this._platformLineGfx.fillStyle(0x0a1a2a, 1);
+            this._platformLineGfx.fillRect(px, py, tw, th);
+            this._platformLineGfx.fillStyle(0x142838, 0.9);
+            this._platformLineGfx.fillRect(px + 2, py + 2, tw - 4, th - 4);
+            this._platformLineGfx.fillStyle(0x7FE0DE, 1);
+            this._platformLineGfx.fillRect(px, py, tw, 3);
+        });
     }
 
     /* ================================================================== */
     /*  Room builder: Enemies                                                */
     /* ================================================================== */
 
-    _buildEnemies(roomDef) {
-        if (!roomDef.enemies || roomDef.enemies.length === 0) return;
+    _buildEnemiesFromSpawns() {
+        if (!this._spawnEnemies || this._spawnEnemies.length === 0) return;
 
-        for (const eDef of roomDef.enemies) {
-            // Skip if already killed
+        for (const eDef of this._spawnEnemies) {
             if (this.enemiesKilled.includes(eDef.id)) continue;
 
             let enemy;
@@ -617,7 +796,6 @@ class GameScene extends Phaser.Scene {
                     enemy = new Skeleton(this, eDef.x, eDef.y);
                     break;
                 default:
-                    console.warn('Unknown enemy type:', eDef.type);
                     continue;
             }
 
@@ -628,63 +806,34 @@ class GameScene extends Phaser.Scene {
             }
         }
 
-        // Enemy-platform collider
         if (this.enemyGroup.getLength() > 0) {
-            const eCollider = this.physics.add.collider(this.enemyGroup, this.platforms);
+            const eGndCollider = this.physics.add.collider(this.enemyGroup, this._tileGround);
+            this._roomColliders.push(eGndCollider);
+            const eCollider = this.physics.add.collider(this.enemyGroup, this._tilePlatforms);
             this._roomColliders.push(eCollider);
 
-            // Player slash → enemy hits
             const pOverlap = this.physics.add.overlap(
-                this.player.slashHitbox,
-                this.enemyGroup,
-                (_, enemySprite) => this._onPlayerHitEnemy(enemySprite),
-                null,
-                this,
+                this.player.slashHitbox, this.enemyGroup,
+                (_, enemySprite) => this._onPlayerHitEnemy(enemySprite), null, this,
             );
             this._roomColliders.push(pOverlap);
 
-            // Enemy → player contact damage
             const tOverlap = this.physics.add.overlap(
-                this.player.sprite,
-                this.enemyGroup,
-                (_, enemySprite) => this._onEnemyTouchPlayer(enemySprite),
-                null,
-                this,
+                this.player.sprite, this.enemyGroup,
+                (_, enemySprite) => this._onEnemyTouchPlayer(enemySprite), null, this,
             );
             this._roomColliders.push(tOverlap);
         }
     }
 
     /* ================================================================== */
-    /*  Room builder: Benches                                                */
-    /* ================================================================== */
-
-    _buildBenches(roomDef) {
-        if (!roomDef.benches || roomDef.benches.length === 0) return;
-        const benchY = 642; // ground surface Y (top of ground collider)
-
-        roomDef.benches.forEach((bDef, index) => {
-            const bench = new Bench(this, bDef.x, benchY);
-            bench._roomBenchIndex = index;
-
-            // Restore used state from save data
-            const saveKey = this.currentRoomId + '_bench_' + index;
-            if (this._usedBenchKeys && this._usedBenchKeys.includes(saveKey)) {
-                bench.usedCount++;
-            }
-
-            this.benches.push(bench);
-        });
-    }
-
-    /* ================================================================== */
     /*  Room builder: NPCs                                                   */
     /* ================================================================== */
 
-    _buildNPCs(roomDef) {
-        if (!roomDef.npcs || roomDef.npcs.length === 0) return;
+    _buildNPCsFromSpawns() {
+        if (!this._spawnNPCs || this._spawnNPCs.length === 0) return;
 
-        for (const nDef of roomDef.npcs) {
+        for (const nDef of this._spawnNPCs) {
             const npc = new NPC(this, nDef.x, nDef.y, {
                 name: nDef.name,
                 dialogues: nDef.dialogues,
@@ -698,11 +847,10 @@ class GameScene extends Phaser.Scene {
     /*  Room builder: Collectibles                                           */
     /* ================================================================== */
 
-    _buildCollectibles(roomDef) {
-        if (!roomDef.collectibles || roomDef.collectibles.length === 0) return;
+    _buildCollectiblesFromSpawns() {
+        if (!this._spawnCollectibles || this._spawnCollectibles.length === 0) return;
 
-        for (const cDef of roomDef.collectibles) {
-            // Skip persistent items that were already collected
+        for (const cDef of this._spawnCollectibles) {
             if (cDef.persistent !== false && this.collectedPersistentItems.includes(cDef.saveId)) continue;
 
             const collectible = new Collectible(this, cDef.x, cDef.y, {
@@ -715,17 +863,14 @@ class GameScene extends Phaser.Scene {
             this.collectibleGroup.add(collectible.sprite);
 
             const overlap = this.physics.add.overlap(
-                this.player.sprite,
-                collectible.sprite,
-                (playerSprite, collectibleSprite) => {
-                    const c = collectibleSprite.collectibleRef;
+                this.player.sprite, collectible.sprite,
+                (_, cs) => {
+                    const c = cs.collectibleRef;
                     if (c && !c.collected) {
                         c.pickup(this.player);
                         this._onCollectiblePicked(c);
                     }
-                },
-                null,
-                this,
+                }, null, this,
             );
             this._roomColliders.push(overlap);
         }
@@ -735,15 +880,12 @@ class GameScene extends Phaser.Scene {
     /*  Room builder: Ability Items                                          */
     /* ================================================================== */
 
-    _buildAbilityItems(roomDef) {
-        if (!roomDef.abilityItems || roomDef.abilityItems.length === 0) return;
+    _buildAbilityItemsFromSpawns() {
+        if (!this._spawnAbilityItems || this._spawnAbilityItems.length === 0) return;
 
-        for (const aDef of roomDef.abilityItems) {
-            // Skip if already collected
+        for (const aDef of this._spawnAbilityItems) {
             if (this.abilityItemsCollected.includes(aDef.key)) continue;
-
-            const item = new AbilityItem(this, aDef.x, aDef.y, aDef.key, aDef.name);
-            this.abilityItems.push(item);
+            this.abilityItems.push(new AbilityItem(this, aDef.x, aDef.y, aDef.key, aDef.name));
         }
     }
 
@@ -751,19 +893,12 @@ class GameScene extends Phaser.Scene {
     /*  Room builder: Ability Gates                                          */
     /* ================================================================== */
 
-    _buildAbilityGates(roomDef) {
-        if (!roomDef.abilityGates || roomDef.abilityGates.length === 0) return;
+    _buildGatesFromSpawns() {
+        if (!this._spawnGates || this._spawnGates.length === 0) return;
 
-        for (const gDef of roomDef.abilityGates) {
-            // Skip if player already has the ability (gate would auto-unlock anyway,
-            // but this avoids creating unnecessary objects)
+        for (const gDef of this._spawnGates) {
             if (this.player.abilities[gDef.key]) continue;
-
-            const gate = new AbilityGate(this, gDef.x, gDef.y, gDef.w, gDef.h, gDef.key);
-            this.abilityGates.push(gate);
-            // Note: AbilityGate constructor already creates its own collider
-            // with scene.player.sprite and this.gateBody. That collider is
-            // cleaned up in gate.destroy() during _clearRoom().
+            this.abilityGates.push(new AbilityGate(this, gDef.x, gDef.y, gDef.w, gDef.h, gDef.key));
         }
     }
 
@@ -771,66 +906,60 @@ class GameScene extends Phaser.Scene {
     /*  Room builder: One-Way Doors                                          */
     /* ================================================================== */
 
-    _buildOneWayDoors(roomDef) {
-        if (!roomDef.oneWayDoors || roomDef.oneWayDoors.length === 0) return;
+    _buildDoorsFromSpawns() {
+        if (!this._spawnDoors || this._spawnDoors.length === 0) return;
+        this._oneWayDoorGraphics = [];
+        this._oneWayDoorZones = [];
 
-        const d = roomDef.oneWayDoors[0];
-        const dx = d.x;
-        const dh = d.h;
-        const dy = d.y || 390;
+        for (const d of this._spawnDoors) {
+            const dx = d.x;
+            const dy = d.y || 390;
+            const dh = d.h || 320;
 
-        // Visual barrier
-        this._oneWayDoorGfx = this.add.graphics().setDepth(20);
-        this._oneWayDoorGfx.fillStyle(0x2d3561, 0.8);
-        this._oneWayDoorGfx.fillRect(dx - 3, dy - dh / 2, 6, dh);
-        this._oneWayDoorGfx.lineStyle(1.5, 0x7FE0DE, 0.4);
-        this._oneWayDoorGfx.strokeRect(dx - 3, dy - dh / 2, 6, dh);
-        this._oneWayDoorGfx.lineStyle(1, 0x7FE0DE, 0.15);
-        this._oneWayDoorGfx.lineBetween(dx, dy - dh / 2, dx, dy + dh / 2);
+            const gfx = this.add.graphics().setDepth(20);
+            gfx.fillStyle(0x2d3561, 0.8);
+            gfx.fillRect(dx - 3, dy - dh / 2, 6, dh);
+            gfx.lineStyle(1.5, 0x7FE0DE, 0.4);
+            gfx.strokeRect(dx - 3, dy - dh / 2, 6, dh);
+            gfx.lineStyle(1, 0x7FE0DE, 0.15);
+            gfx.lineBetween(dx, dy - dh / 2, dx, dy + dh / 2);
+            this._oneWayDoorGraphics.push(gfx);
 
-        // Physics zone (static body)
-        this.oneWayDoorZone = this.add.zone(dx, dy, 6, dh);
-        this.physics.add.existing(this.oneWayDoorZone, true);
+            const zone = this.add.zone(dx, dy, 6, dh);
+            this.physics.add.existing(zone, true);
+            this._oneWayDoorZones.push(zone);
 
-        // Collider with direction-based process callback
-        const doorCollider = this.physics.add.collider(
-            this.player.sprite,
-            this.oneWayDoorZone,
-            null,
-            (playerSprite, zone) => {
-                // Block left→right; allow right→left and all other cases
-                if (playerSprite.x > zone.x && playerSprite.body.velocity.x < 0) {
-                    return true; // collide (block movement)
-                }
-                return false; // pass through freely
-            },
-            this,
-        );
-        this._roomColliders.push(doorCollider);
+            const doorCollider = this.physics.add.collider(
+                this.player.sprite, zone, null,
+                (playerSprite, z) => {
+                    if (playerSprite.x > z.x && playerSprite.body.velocity.x < 0) return true;
+                    return false;
+                }, this,
+            );
+            this._roomColliders.push(doorCollider);
+        }
     }
 
     /* ================================================================== */
     /*  Room builder: Boss Trigger                                           */
     /* ================================================================== */
 
-    _buildBossTrigger(roomDef) {
-        if (!roomDef.bossTrigger || this._bossDefeated) return;
+    _buildBossTriggerFromSpawns() {
+        if (!this._bossTriggerRect || this._bossDefeated) return;
+        const r = this._bossTriggerRect;
 
-        this.bossTriggerZone = this.add.zone(480, 360, 960, 720);
+        this.bossTriggerZone = this.add.zone(r.x + r.w / 2, r.y + r.h / 2, r.w, r.h);
         this.physics.add.existing(this.bossTriggerZone, true);
 
         const overlap = this.physics.add.overlap(
-            this.player.sprite,
-            this.bossTriggerZone,
+            this.player.sprite, this.bossTriggerZone,
             () => {
                 if (!this._bossTriggered) {
                     this._bossTriggered = true;
                     this.bossActive = true;
                     this._startBossBattle();
                 }
-            },
-            null,
-            this,
+            }, null, this,
         );
         this._roomColliders.push(overlap);
     }
@@ -854,114 +983,103 @@ class GameScene extends Phaser.Scene {
     /*  Room builder: Decorations                                            */
     /* ================================================================== */
 
-    _buildDecorations(roomDef) {
-        const dec = roomDef.decorations;
-        if (!dec) return;
+    _buildDecorationsFromSpawns(roomDef) {
+        const stalTex = this.textures.get('deco_stalactite').getSourceImage();
+        const stalH = stalTex ? stalTex.height : 24;
 
         // Torches
-        if (dec.torches) {
-            dec.torches.forEach(t => {
-                const torch = this.add.image(t.x, t.y, 'deco_torch')
-                    .setDepth(1).setOrigin(0.5, 1);
-                this.tweens.add({
-                    targets: torch,
-                    alpha: { from: 0.6, to: 1 },
-                    duration: 400 + Math.random() * 400,
-                    yoyo: true,
-                    repeat: -1,
-                    ease: 'Sine.easeInOut',
-                });
-                this._torches.push(torch);
+        for (const t of this._spawnTorches) {
+            const torch = this.add.image(t.x, t.y, 'deco_torch').setDepth(1).setOrigin(0.5, 1);
+            this.tweens.add({
+                targets: torch,
+                alpha: { from: 0.6, to: 1 },
+                duration: 400 + Math.random() * 400,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut',
             });
+            this._torches.push(torch);
         }
 
         // Stalactites
-        if (dec.stalactites) {
-            dec.stalactites.forEach(s => {
-                const st = this.add.image(s.x, 0, 'deco_stalactite')
-                    .setOrigin(0.5, 0).setScale(1, s.h / 24 || 1).setDepth(-4);
-                this._stalactites.push(st);
-            });
+        for (const s of this._spawnStalactites) {
+            const st = this.add.image(s.x, 0, 'deco_stalactite')
+                .setOrigin(0.5, 0).setScale(1, s.h / stalH || 1).setDepth(-4);
+            this._stalactites.push(st);
         }
 
         // Crystals
-        if (dec.crystals) {
-            dec.crystals.forEach(c => {
-                const crystal = this.add.image(c.x, c.y, 'deco_crystal').setDepth(-3);
-                this.tweens.add({
-                    targets: crystal,
-                    alpha: { from: 0.5, to: 1 },
-                    scale: { from: 0.8, to: 1.1 },
-                    duration: 2500 + Math.random() * 1500,
-                    yoyo: true,
-                    repeat: -1,
-                    ease: 'Sine.easeInOut',
-                });
-                this._crystals.push(crystal);
+        for (const c of this._spawnCrystals) {
+            const crystal = this.add.image(c.x, c.y, 'deco_crystal').setDepth(-3);
+            this.tweens.add({
+                targets: crystal,
+                alpha: { from: 0.5, to: 1 },
+                scale: { from: 0.8, to: 1.1 },
+                duration: 2500 + Math.random() * 1500,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut',
             });
+            this._crystals.push(crystal);
         }
 
         // Vines
-        if (dec.vines) {
-            dec.vines.forEach(v => {
-                const vine = this.add.image(v.x, 556, 'deco_vine')
-                    .setOrigin(0.5, 0).setDepth(-3);
-                this._vines.push(vine);
-            });
+        for (const v of this._spawnVines) {
+            const vine = this.add.image(v.x, 556, 'deco_vine').setOrigin(0.5, 0).setDepth(-3);
+            this._vines.push(vine);
         }
 
-        // Rune glows
-        if (dec.runeGlows) {
-            const rg = dec.runeGlows;
-            const startX = rg.startX || 100;
-            const count = rg.count || 4;
-            for (let i = 0; i < count; i++) {
-                const rx = startX + i * 80 + Phaser.Math.Between(-4, 4);
-                const ry = 555 + Phaser.Math.Between(-5, 5);
-                const rune = this.add.circle(rx, ry, Phaser.Math.Between(2, 4), 0x7FE0DE, 0.2)
-                    .setDepth(-3);
-                this.tweens.add({
-                    targets: rune,
-                    alpha: { from: 0.1, to: 0.35 },
-                    scale: { from: 0.6, to: 1.3 },
-                    duration: 1800 + i * 300,
-                    yoyo: true,
-                    repeat: -1,
-                    ease: 'Sine.easeInOut',
-                });
-                this._runeGlows.push(rune);
-            }
-        }
-
-        // Ambient lights
-        if (dec.ambientLights) {
-            dec.ambientLights.forEach(al => {
-                const color = al.color || 0x7FE0DE;
-                for (let i = 0; i < (al.count || 3); i++) {
-                    const lx = al.x + i * 60 + Phaser.Math.Between(-8, 8);
-                    const ly = al.y + Phaser.Math.Between(-15, 15);
-                    const dot = this.add.circle(lx, ly, Phaser.Math.Between(3, 5), color, al.alpha || 0.3)
-                        .setDepth(-4);
+        // Rune glows + ambient lights (still from roomDef for now)
+        if (roomDef && roomDef.decorations) {
+            const dec = roomDef.decorations;
+            if (dec.runeGlows) {
+                const rg = dec.runeGlows;
+                const startX = rg.startX || 100;
+                const count = rg.count || 4;
+                for (let i = 0; i < count; i++) {
+                    const rx = startX + i * 80 + Phaser.Math.Between(-4, 4);
+                    const ry = 555 + Phaser.Math.Between(-5, 5);
+                    const rune = this.add.circle(rx, ry, Phaser.Math.Between(2, 4), 0x7FE0DE, 0.2).setDepth(-3);
                     this.tweens.add({
-                        targets: dot,
-                        alpha: { from: (al.alpha || 0.3) * 0.3, to: (al.alpha || 0.3) },
-                        scale: { from: 0.5, to: 1.2 },
-                        duration: 2000 + Phaser.Math.Between(0, 1000),
+                        targets: rune,
+                        alpha: { from: 0.1, to: 0.35 },
+                        scale: { from: 0.6, to: 1.3 },
+                        duration: 1800 + i * 300,
                         yoyo: true,
                         repeat: -1,
                         ease: 'Sine.easeInOut',
-                        delay: i * 400,
                     });
-                    this._ambientLights.push(dot);
+                    this._runeGlows.push(rune);
                 }
-            });
+            }
+            if (dec.ambientLights) {
+                dec.ambientLights.forEach(al => {
+                    const color = al.color || 0x7FE0DE;
+                    for (let i = 0; i < (al.count || 3); i++) {
+                        const lx = al.x + i * 60 + Phaser.Math.Between(-8, 8);
+                        const ly = al.y + Phaser.Math.Between(-15, 15);
+                        const dot = this.add.circle(lx, ly, Phaser.Math.Between(3, 5), color, al.alpha || 0.3).setDepth(-4);
+                        this.tweens.add({
+                            targets: dot,
+                            alpha: { from: (al.alpha || 0.3) * 0.3, to: (al.alpha || 0.3) },
+                            scale: { from: 0.5, to: 1.2 },
+                            duration: 2000 + Phaser.Math.Between(0, 1000),
+                            yoyo: true,
+                            repeat: -1,
+                            ease: 'Sine.easeInOut',
+                            delay: i * 400,
+                        });
+                        this._ambientLights.push(dot);
+                    }
+                });
+            }
         }
     }
 
-    _buildExitMarkers(roomDef) {
-        if (!roomDef.exits || roomDef.exits.length === 0) return;
+    _buildExitMarkers() {
+        if (!this._roomExits || this._roomExits.length === 0) return;
 
-        roomDef.exits.forEach(exit => {
+        for (const exit of this._roomExits) {
             const marker = this.add.graphics().setDepth(-2);
             const isVertical = exit.dir === 'up' || exit.dir === 'down';
             const glow = exit.targetRoom === 'boss' ? 0xb84c4c : 0x7FE0DE;
@@ -969,60 +1087,46 @@ class GameScene extends Phaser.Scene {
             if (isVertical) {
                 const lipY = exit.dir === 'up' ? exit.y + 10 : exit.y - 10;
                 const centerX = exit.x + exit.w / 2;
-                marker.fillStyle(0x03050b, 0.35);
-                marker.fillRect(exit.x - 18, 0, exit.w + 36, exit.dir === 'up' ? lipY + 4 : 600 - (exit.y - 4));
-                marker.fillStyle(0x08101a, 0.95);
-                marker.fillRect(exit.x - 12, lipY - 8, exit.w + 24, 16);
-                marker.lineStyle(2, glow, 0.35);
-                marker.strokeRect(exit.x - 12, lipY - 8, exit.w + 24, 16);
-                marker.fillStyle(glow, 0.1);
-                marker.fillEllipse(centerX, lipY, exit.w + 36, 20);
+                marker.fillStyle(0x0a0e17, 0.9);
+                marker.fillRect(exit.x - 8, lipY - 6, exit.w + 16, 12);
+                marker.lineStyle(1, glow, 0.18);
+                marker.strokeRect(exit.x - 8, lipY - 6, exit.w + 16, 12);
 
                 for (let i = -1; i <= 1; i++) {
                     const guide = this.add.triangle(
-                        centerX + i * 16,
-                        lipY + (exit.dir === 'up' ? -18 : 18),
-                        0, exit.dir === 'up' ? 9 : -9,
-                        -5, 0,
-                        5, 0,
-                        glow,
-                        0.32,
+                        centerX + i * 16, lipY + (exit.dir === 'up' ? -14 : 14),
+                        0, exit.dir === 'up' ? 7 : -7, -4, 0, 4, 0,
+                        glow, 0.18,
                     ).setDepth(-2);
                     this._exitMarkers.push(guide);
                 }
             } else {
                 const rightSide = exit.dir === 'right';
                 const frameX = rightSide ? exit.x - 12 : exit.x + exit.w - 4;
-                const innerX = rightSide ? exit.x + 2 : exit.x - 14;
-                const glowX = rightSide ? exit.x - 18 : exit.x + exit.w - 6;
+                const innerX = rightSide ? exit.x + 1 : exit.x - 9;
 
-                marker.fillStyle(0x03050b, 0.35);
-                marker.fillRect(rightSide ? exit.x - 42 : 0, exit.y - 54, rightSide ? 42 : exit.x + exit.w + 42, exit.h + 108);
-                marker.fillStyle(0x07101a, 0.96);
-                marker.fillRect(frameX, exit.y - 34, 16, exit.h + 68);
-                marker.fillStyle(0x05070f, 0.9);
-                marker.fillRect(innerX, exit.y - 20, 18, exit.h + 40);
-                marker.lineStyle(2, glow, 0.3);
-                marker.strokeRect(innerX, exit.y - 20, 18, exit.h + 40);
-                marker.fillStyle(glow, 0.08);
-                marker.fillRect(glowX, exit.y - 10, 24, exit.h + 20);
+                marker.fillStyle(0x0a0e17, 0.9);
+                marker.fillRect(frameX, exit.y - 18, 12, exit.h + 36);
+                marker.fillStyle(0x111726, 0.7);
+                marker.fillRect(innerX, exit.y - 12, 8, exit.h + 24);
+                marker.lineStyle(1, glow, 0.18);
+                marker.strokeRect(innerX, exit.y - 12, 8, exit.h + 24);
 
                 for (let i = 0; i < 3; i++) {
                     const arrow = this.add.triangle(
-                        rightSide ? exit.x - 26 : exit.x + exit.w + 26,
+                        rightSide ? exit.x - 14 : exit.x + exit.w + 14,
                         exit.y + 10 + i * 18,
-                        rightSide ? -7 : 7, 0,
-                        rightSide ? 5 : -5, -5,
-                        rightSide ? 5 : -5, 5,
-                        glow,
-                        0.28,
+                        rightSide ? -4 : 4, 0,
+                        rightSide ? 3 : -3, -3,
+                        rightSide ? 3 : -3, 3,
+                        glow, 0.14,
                     ).setDepth(-2);
                     this._exitMarkers.push(arrow);
                 }
             }
 
             this._exitMarkers.push(marker);
-        });
+        }
     }
 
     /* ================================================================== */
@@ -1035,12 +1139,12 @@ class GameScene extends Phaser.Scene {
             this._roomBanner.destroy();
         }
 
-        const banner = this.add.text(400, 200, title, {
+        const banner = this.add.text(this.scale.width / 2, 200, title, {
             fontFamily: GAME_FONTS?.ui || 'monospace',
-            fontSize: '28px',
+            fontSize: '24px',
             color: '#ffffff',
             stroke: '#000000',
-            strokeThickness: 4,
+            strokeThickness: 3,
         }).setOrigin(0.5).setAlpha(0).setScrollFactor(0).setDepth(200);
 
         this._roomBanner = banner;
@@ -1048,17 +1152,17 @@ class GameScene extends Phaser.Scene {
         this.tweens.add({
             targets: banner,
             alpha: 1,
-            y: 180,
-            duration: 400,
-            ease: 'Power2',
+            y: 188,
+            duration: 180,
+            ease: 'Sine.easeOut',
             onComplete: () => {
                 this.tweens.add({
                     targets: banner,
                     alpha: 0,
-                    y: 160,
-                    duration: 600,
-                    ease: 'Power2',
-                    delay: 1000,
+                    y: 172,
+                    duration: 220,
+                    ease: 'Sine.easeIn',
+                    delay: 700,
                     onComplete: () => {
                         if (banner && banner.active) banner.destroy();
                         if (this._roomBanner === banner) this._roomBanner = null;
@@ -1068,19 +1172,25 @@ class GameScene extends Phaser.Scene {
         });
     }
 
+    _setupRoomBoundary(roomDef) {
+        if (!this._roomExits || this._roomExits.length === 0) return;
+        if (this._roomBoundaryGfx) {
+            this._roomBoundaryGfx.destroy();
+        }
+        this._roomBoundaryGfx = this.add.graphics().setDepth(-3);
+        const gfx = this._roomBoundaryGfx;
+        const w = this._roomPixelWidth || roomDef.width;
+        const h = this._roomPixelHeight || roomDef.height;
+        gfx.lineStyle(1, 0x23324a, 0.35);
+        gfx.strokeRect(1, 1, w - 2, h - 2);
+    }
+
     /* ================================================================== */
     /*  Player Creation (once, no platform collider — done per-room)         */
     /* ================================================================== */
 
     _createPlayer() {
         this.player = new Player(this, 120, 530);
-    }
-
-    _shouldPlayerCollideWithPlatform(playerSprite, platform) {
-        const body = playerSprite.body;
-        const platformBody = platform.body;
-        const previousBottom = body.bottom - body.deltaY();
-        return body.velocity.y >= 0 && previousBottom <= platformBody.top + 8;
     }
 
     /* ================================================================== */
@@ -1093,12 +1203,9 @@ class GameScene extends Phaser.Scene {
             right: this.input.keyboard.addKey('D'),
             up: this.input.keyboard.addKey('W'),
             down: this.input.keyboard.addKey('S'),
-            jump1: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP),
-            jump2: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
             attack: this.input.keyboard.addKey('J'),
-            attack2: this.input.keyboard.addKey('Z'),
-            dash1: this.input.keyboard.addKey('K'),
-            dash2: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT),
+            jump: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.K),
+            dash: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.L),
         };
 
         this._attackHandlerJ = () => {
@@ -1106,25 +1213,11 @@ class GameScene extends Phaser.Scene {
             if (this.isResting) return;
             if (this.isTalking) return;
             if (this.player && !this.bossActive) {
-                // Don't attack while near a bench or NPC — J is "rest" / "talk" there
-                if (this._getNearbyBench()) return;
                 if (this._getNearbyNPC()) return;
                 this.player.attackPressed();
             }
         };
-        this._attackHandlerZ = () => {
-            if (this.pauseMenu && this.pauseMenu.isPaused) return;
-            if (this.isResting) return;
-            if (this.isTalking) return;
-            if (this.player && !this.bossActive) {
-                if (this._getNearbyBench()) return;
-                if (this._getNearbyNPC()) return;
-                this.player.attackPressed();
-            }
-        };
-
         this.input.keyboard.on('keydown-J', this._attackHandlerJ);
-        this.input.keyboard.on('keydown-Z', this._attackHandlerZ);
 
         this._pointerActionHandler = (pointer) => {
             if (!pointer || pointer.button !== 0) return;
@@ -1143,19 +1236,10 @@ class GameScene extends Phaser.Scene {
             if (this.player && !this.bossActive) {
                 const nearbyNPC = this._getNearbyNPC();
                 if (nearbyNPC) {
-                    const nearbyBench = this._getNearbyBench();
-                    if (nearbyBench) nearbyBench.showPrompt(false);
                     nearbyNPC.showPrompt(false);
                     this.talkingNPC = nearbyNPC;
                     this.isTalking = true;
                     nearbyNPC.startDialogue();
-                    return;
-                }
-
-                const nearbyBench = this._getNearbyBench();
-                if (nearbyBench) {
-                    nearbyBench.showPrompt(false);
-                    this._restAtBench(nearbyBench);
                     return;
                 }
 
@@ -1166,115 +1250,9 @@ class GameScene extends Phaser.Scene {
 
         this.events.once('shutdown', () => {
             this.input.keyboard.off('keydown-J', this._attackHandlerJ);
-            this.input.keyboard.off('keydown-Z', this._attackHandlerZ);
             if (this.input) this.input.off('pointerdown', this._pointerActionHandler);
             if (this.npcs) this.npcs.forEach(n => n.destroy());
-        });
-    }
-
-    /* ================================================================== */
-    /*  Bench System                                                         */
-    /* ================================================================== */
-
-    /** Ground surface Y (top of ground collider). */
-    get _groundSurfaceY() { return 550; }
-
-    /**
-     * Return the nearest bench whose interaction zone contains the player,
-     * or null if none are nearby.
-     */
-    _getNearbyBench() {
-        if (!this.player || !this.benches) return null;
-        for (let i = 0; i < this.benches.length; i++) {
-            if (this.benches[i].isPlayerNearby(this.player.x, this.player.y)) {
-                return this.benches[i];
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Rest at a bench: freeze player → alpha pulse → full restore →
-     * show text → save → reset enemies/collectibles.
-     * @param {Bench} bench
-     */
-    _restAtBench(bench) {
-        if (this.isResting) return;
-        this.isResting = true;
-
-        // Hide all prompts
-        this.benches.forEach(b => b.showPrompt(false));
-
-        // Freeze player
-        this.player.body.setVelocity(0, 0);
-        this.player.body.setAllowGravity(false);
-
-        // Bench visual pulse
-        bench.playRestEffect();
-
-        // Player alpha pulse
-        this.tweens.add({
-            targets: this.player.sprite,
-            alpha: 0.3,
-            duration: 200,
-            yoyo: true,
-            ease: 'Sine.easeInOut',
-            hold: 100,
-            onComplete: () => {
-                // Full restore
-                this.player.heal(this.player.maxHp);
-                this.player.feelings = this.player.feelingsMax;
-                this.player.sprite.setAlpha(1);
-                this.player.body.setAllowGravity(true);
-
-                // Audio feedback
-                this.sound.play('sfx_ui_confirm', { volume: 0.4 });
-
-                // Track bench usage globally
-                if (bench._roomBenchIndex !== undefined) {
-                    const key = this.currentRoomId + '_bench_' + bench._roomBenchIndex;
-                    if (!this._usedBenchKeys.includes(key)) {
-                        this._usedBenchKeys.push(key);
-                    }
-                }
-
-                // Reset all enemies (before save so save has clean state)
-                this._resetEnemies();
-                // Reset non-persistent collectibles (health orbs respawn, items stay)
-                this._resetCollectibles();
-
-                // Save game
-                this._saveGame();
-
-                // Floating "RESTORED" text
-                this._showRestoredText();
-
-                // Re-enable controls
-                this.isResting = false;
-            },
-        });
-    }
-
-    /** Show a brief floating "◆ RESTORED ◆" text above the player. */
-    _showRestoredText() {
-        const txt = this.add.text(
-            this.player.x,
-            this.player.y - 40,
-            '\u25C6 RESTORED \u25C6',
-            {
-                fontSize: '14px',
-                fontFamily: 'monospace',
-                color: '#7FE0DE',
-            },
-        ).setOrigin(0.5).setDepth(200);
-
-        this.tweens.add({
-            targets: txt,
-            y: txt.y - 24,
-            alpha: 0,
-            duration: 1000,
-            ease: 'Power2',
-            onComplete: () => txt.destroy(),
+            if (this.chapterBg) { this.chapterBg.destroy(); this.chapterBg = null; }
         });
     }
 
@@ -1297,6 +1275,79 @@ class GameScene extends Phaser.Scene {
     }
 
     /* ================================================================== */
+    /*  Hit Feedback Helpers                                                 */
+    /* ================================================================== */
+
+    /**
+     * Freeze all game logic for a set number of frames (hitStop).
+     * Physics is paused via `physics.world.isPaused` so bodies freeze,
+     * but visual tweens, particles, and camera effects continue.
+     * @param {number} frames - Number of 60fps frames to freeze (0 = no-op)
+     */
+    _doHitStop(frames) {
+        if (frames <= 0) return;
+        if (this._transitioning) return;           // Skip during room transition
+        if (this.pauseMenu && this.pauseMenu.isPaused) return; // Skip if paused
+        if (this._hitStopFrames > 0) return;       // Don't stack hitStops
+        this._hitStopFrames = frames;
+        this.physics.world.isPaused = true;
+    }
+
+    /**
+     * Camera zoom pulse — brief zoom-in on big hits for dramatic effect.
+     * @param {number} amount - Zoom delta (e.g. 0.01 = +1%)
+     * @param {number} duration - Total tween duration in ms
+     */
+    _cameraZoomPulse(amount, duration) {
+        const cam = this.cameras.main;
+        const baseZoom = cam.zoom;
+        this.tweens.add({
+            targets: cam,
+            zoom: baseZoom + amount,
+            duration: duration * 0.3,
+            yoyo: true,
+            ease: 'Quad.easeOut',
+            hold: duration * 0.4,
+        });
+    }
+
+    /**
+     * Landing camera catch-up bounce.
+     * When the player lands from a significant fall (>100px), the camera
+     * briefly overshoots downward by a small amount then settles, giving
+     * a gentle "oof" feel.
+     */
+    _checkLandingBounce() {
+        if (!this.player || this.player.dead) return;
+
+        // Track the Y where the player first left the ground
+        if (!this._lastAirborne && this.player.isAirborneStable) {
+            this._fallStartY = this.player.y;
+        }
+
+        // Detect landing: was airborne, now grounded
+        if (this._lastAirborne && !this.player.isAirborneStable && !this.player.dead) {
+            const fallDistance = this.player.y - (this._fallStartY || this.player.y);
+
+            if (fallDistance > 100) {
+                const intensity = Math.min(fallDistance / 500, 0.8);
+                const bounceY = -4 * intensity;  // Negative = camera shifts up (camera catches up)
+                const bounceDuration = Math.min(100 + intensity * 80, 180);
+
+                this.tweens.add({
+                    targets: this.cameras.main,
+                    scrollY: this.cameras.main.scrollY + bounceY,
+                    duration: bounceDuration * 0.5,
+                    ease: 'Quad.easeOut',
+                    yoyo: true,
+                });
+            }
+        }
+
+        this._lastAirborne = this.player.isAirborneStable;
+    }
+
+    /* ================================================================== */
     /*  Combat: Player hits enemy                                            */
     /* ================================================================== */
 
@@ -1304,36 +1355,107 @@ class GameScene extends Phaser.Scene {
         const enemy = this.enemyInstances.find(e => e.sprite === enemySprite);
         if (!enemy || enemy.dead || enemy.invulnTimer > 0) return;
 
-        let dmg, kbx, kby, shake, hitStop;
+        let dmg, kbx, kby, shake, hitStopFrames, hitstunFrames;
+        let particleConfig;
         const sword = this.player.abilities.sword;
+        const dir = this.player.facingRight ? 1 : -1;
+
         switch (this.player.state) {
             case 'attack1_active':
-                dmg = sword ? 28 : 13;
-                kbx = 130;
-                kby = -45;
-                shake = 3;
-                hitStop = 67;
+                if (sword) {
+                    // Attack3: sword finisher — heavy hit
+                    dmg = 8;
+                    kbx = 160;
+                    kby = -60;
+                    shake = 6;
+                    hitStopFrames = 6;
+                    hitstunFrames = 24;
+                    particleConfig = {
+                        dirX: dir, count: 10, spread: 80,
+                        color: 0xa8d8ff, sizeMin: 3, sizeMax: 5, lifetime: 300,
+                    };
+                    this.cameras.main.flash(100, 255, 255, 255);
+                    this._cameraZoomPulse(0.01, 150);
+                } else {
+                    // Attack1 (no sword): quick light hit
+                    dmg = 3;
+                    kbx = 130;
+                    kby = -45;
+                    shake = 2;
+                    hitStopFrames = 3;
+                    hitstunFrames = 12;
+                    particleConfig = {
+                        dirX: dir, count: 3, spread: 30,
+                        color: 0xffffff, sizeMin: 2, sizeMax: 3, lifetime: 200,
+                    };
+                }
                 break;
+
             case 'attack2_active':
-                dmg = 22;
+                dmg = sword ? 7 : 5;
                 kbx = 200;
                 kby = -70;
                 shake = 5;
-                hitStop = 100;
+                hitStopFrames = 5;
+                hitstunFrames = 18;
+                particleConfig = {
+                    dirX: dir, count: 7, spread: 80,
+                    color: 0xffffff, sizeMin: 3, sizeMax: 5, lifetime: 300,
+                };
                 break;
+
             case 'air_attack_active':
-                dmg = sword ? 22 : 18;
+                if (sword) {
+                    dmg = 6;
+                } else {
+                    dmg = 4;
+                }
                 kbx = 90;
                 kby = -90;
-                shake = 3;
-                hitStop = 67;
+                shake = 4;
+                hitStopFrames = 4;
+                hitstunFrames = 15;
+                if (this.player.isGroundedStable) {
+                    // Air slam landing: 360° ground-level radial burst
+                    particleConfig = {
+                        dirX: dir, count: 8, spread: 360,
+                        color: 0xffffff, sizeMin: 3, sizeMax: 4, lifetime: 300,
+                        isRadial: true,
+                    };
+                    this.cameras.main.flash(80, 255, 255, 255);
+                } else {
+                    // Mid-air hit: downward spray
+                    particleConfig = {
+                        dirX: dir, count: sword ? 5 : 3, spread: sword ? 60 : 40,
+                        color: sword ? 0xa8d8ff : 0xffffff, sizeMin: 2, sizeMax: 4, lifetime: 250,
+                        speedMin: 40, speedMax: 90,
+                    };
+                }
                 break;
+
             default:
                 return;
         }
 
-        const dir = this.player.facingRight ? 1 : -1;
-        enemy.takeDamage(dmg, kbx * dir, kby);
+        // ── Apply hit feedback ────────────────────────────────────────
+
+        // HitStop: freeze frame (prevents stacking via _doHitStop guard)
+        this._doHitStop(hitStopFrames);
+
+        // Camera shake (duration matches hitStop feel)
+        const shakeDuration = hitStopFrames * 16.67; // ms at ~60fps
+        this.cameras.main.shake(shakeDuration, shake / 100);
+
+        // Directional hit particles
+        this._spawnHitParticles(enemy.x, enemy.y - 10, particleConfig);
+
+        // Damage number
+        this._showDamageNumber(enemy.x, enemy.y - 20, dmg);
+
+        // Enemy takes damage with hitstun frames (knockback + AI freeze)
+        enemy.takeDamage(dmg, kbx * dir, kby, hitstunFrames);
+
+        // Player combo tracking
         this.player.onHitEnemy();
         this.hud.showCombo(this.player.comboCount);
 
@@ -1341,11 +1463,6 @@ class GameScene extends Phaser.Scene {
         if (this.player.comboCount >= 2) {
             this.sound.play('sfx_combo_hit', { volume: 0.5 });
         }
-
-        // Screen shake (reduced vs boss) + particles
-        this.cameras.main.shake(hitStop * 0.6 / 1000, shake / 100);
-        this._spawnHitParticles(enemy.x, enemy.y - 10);
-        this._showDamageNumber(enemy.x, enemy.y - 20, dmg);
 
         // Kill bonus Feelings + tracking
         if (enemy.dead && enemy.feelingsDrop > 0) {
@@ -1364,16 +1481,68 @@ class GameScene extends Phaser.Scene {
         this.player.takeDamage(enemy.contactDamage, 60, -30);
     }
 
-    _spawnHitParticles(x, y) {
-        for (let i = 0; i < 5; i++) {
-            const p = this.add.circle(x, y, 3, 0xffffff).setDepth(50).setAlpha(1);
+    /**
+     * Spawn a directional or radial burst of hit particles.
+     *
+     * @param {number}  x           - Center X
+     * @param {number}  y           - Center Y
+     * @param {object}  [config]    - Particle configuration
+     * @param {number}  [config.dirX=1]     - Facing direction (±1)
+     * @param {number}  [config.count=5]    - Number of particles
+     * @param {number}  [config.spread=60]  - Cone spread in degrees (ignored if isRadial)
+     * @param {number}  [config.color=0xffffff] - Particle color
+     * @param {number}  [config.sizeMin=2]  - Min particle radius (px)
+     * @param {number}  [config.sizeMax=4]  - Max particle radius (px)
+     * @param {number}  [config.lifetime=250] - Tween duration (ms)
+     * @param {boolean} [config.isRadial=false] - 360° burst instead of directional cone
+     * @param {number}  [config.speedMin=30] - Min particle speed
+     * @param {number}  [config.speedMax=80] - Max particle speed
+     */
+    _spawnHitParticles(x, y, config = {}) {
+        const {
+            dirX = 1,
+            count = 5,
+            spread = 60,
+            color = 0xffffff,
+            sizeMin = 2,
+            sizeMax = 4,
+            lifetime = 250,
+            isRadial = false,
+            speedMin = 30,
+            speedMax = 80,
+        } = config;
+
+        for (let i = 0; i < count; i++) {
+            const size = Phaser.Math.Between(sizeMin, sizeMax);
+            let angle, speed;
+
+            if (isRadial) {
+                // 360° burst — used for air slam ground impact
+                angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+                speed = Phaser.Math.Between(speedMin - 10, speedMax - 10);
+            } else {
+                // Directional cone — cone center is the attack direction
+                const halfSpread = (spread / 2) * Math.PI / 180;
+                angle = Phaser.Math.FloatBetween(-halfSpread, halfSpread);
+                speed = Phaser.Math.Between(speedMin, speedMax);
+            }
+
+            const vx = Math.cos(angle) * speed * (isRadial ? 1 : Math.sign(dirX));
+            const vy = isRadial
+                ? Math.sin(angle) * speed
+                : Math.sin(angle) * speed - Phaser.Math.Between(10, 30);
+
+            const p = this.add.circle(x, y, size, color, 1)
+                .setDepth(50).setAlpha(1);
+
             this.tweens.add({
                 targets: p,
-                x: p.x + Phaser.Math.Between(-20, 20),
-                y: p.y + Phaser.Math.Between(-20, 20),
+                x: p.x + vx,
+                y: p.y + vy,
                 alpha: 0,
-                scale: 0.2,
-                duration: 250,
+                scaleX: 0.3,
+                scaleY: 0.3,
+                duration: lifetime,
                 ease: 'Power2',
                 onComplete: () => p.destroy(),
             });
@@ -1434,11 +1603,7 @@ class GameScene extends Phaser.Scene {
         // Clear killed list so ALL enemies respawn
         this.enemiesKilled = [];
 
-        // Rebuild enemies from current room data
-        const roomDef = this._roomDef(this.currentRoomId);
-        if (roomDef) {
-            this._buildEnemies(roomDef);
-        }
+        this._buildEnemiesFromSpawns();
     }
 
     /**
@@ -1454,11 +1619,7 @@ class GameScene extends Phaser.Scene {
             this.collectibleGroup.clear(true, true);
         }
 
-        // Rebuild collectibles from current room data
-        const roomDef = this._roomDef(this.currentRoomId);
-        if (roomDef) {
-            this._buildCollectibles(roomDef);
-        }
+        this._buildCollectiblesFromSpawns();
     }
 
     /**
@@ -1486,8 +1647,8 @@ class GameScene extends Phaser.Scene {
     /*  Save / Load                                                          */
     /* ================================================================== */
 
-    /** Persist current game state to localStorage under 'sekai_save'. */
-    _saveGame() {
+    /** Persist current game state to localStorage at the given slot (0-4). */
+    _saveGame(slotIndex = 0) {
         const data = {
             roomId: this.currentRoomId,
             x: Math.round(this.player.x),
@@ -1497,15 +1658,15 @@ class GameScene extends Phaser.Scene {
             feelings: this.player.feelings,
             feelingsMax: this.player.feelingsMax,
             abilities: { ...this.player.abilities },
-            benchesUsed: [...this._usedBenchKeys],
             enemiesKilled: [...this.enemiesKilled],
             collectedItems: [...this.collectedPersistentItems],
             abilityItemsCollected: [...this.abilityItemsCollected],
             visitedRooms: [...(this.visitedRooms || [this.currentRoomId])],
             bossDefeated: this._bossDefeated || false,
+            timestamp: Date.now(),
         };
         try {
-            localStorage.setItem('sekai_save', JSON.stringify(data));
+            localStorage.setItem(`sekai_save_${slotIndex}`, JSON.stringify(data));
         } catch (e) {
             console.warn('Failed to save game:', e);
         }
@@ -1534,9 +1695,6 @@ class GameScene extends Phaser.Scene {
         }
         if (data.bossDefeated) {
             this._bossDefeated = true;
-        }
-        if (data.benchesUsed) {
-            this._usedBenchKeys = data.benchesUsed;
         }
 
         // Determine target room
@@ -1580,6 +1738,8 @@ class GameScene extends Phaser.Scene {
     /* ================================================================== */
 
     update(time, delta) {
+        if (this._spawnLockFrames > 0) this._spawnLockFrames--;
+        this._updateChapterBackground();
         this.pauseMenu.update();
 
         // Update the map overlay even when paused (so player marker moves)
@@ -1588,6 +1748,22 @@ class GameScene extends Phaser.Scene {
         }
 
         if (this.pauseMenu.isPaused || this.scene.isPaused()) return;
+        this._updateCameraLook(delta);
+
+        // ── HitStop freeze-frame ─────────────────────────────────────
+        // Freezes all game logic (player, enemies, exits, interactions)
+        // while allowing visual tweens and camera effects to continue.
+        if (this._hitStopFrames > 0) {
+            this._hitStopFrames--;
+            if (this._hitStopFrames <= 0) {
+                this.physics.world.isPaused = false;
+            }
+            // Keep HUD updated during freeze
+            this.hud.drawPips(this.player.hp, this.player.maxHp);
+            this.hud.drawFeelings(this.player.feelings, this.player.feelingsMax);
+            this.hud.drawAbilities(this.player.abilities);
+            return;
+        }
 
         // ---- Exit detection ----
         this._checkExits();
@@ -1595,7 +1771,7 @@ class GameScene extends Phaser.Scene {
         // ---- NPC dialogue (freezes gameplay while talking) ----
         if (this.isTalking && this.talkingNPC) {
             const talkingNPC = this.talkingNPC;
-            if (Phaser.Input.Keyboard.JustDown(this.keys.attack) || Phaser.Input.Keyboard.JustDown(this.keys.attack2)) {
+            if (Phaser.Input.Keyboard.JustDown(this.keys.attack)) {
                 const closed = talkingNPC.advanceDialogue();
                 if (closed) {
                     this.isTalking = false;
@@ -1610,28 +1786,10 @@ class GameScene extends Phaser.Scene {
             return;
         }
 
-        // ---- Bench interaction check ----
-        if (!this.isResting && !this.player.dead) {
-            const nearbyBench = this._getNearbyBench();
-            if (nearbyBench) {
-                nearbyBench.showPrompt(true);
-                if (Phaser.Input.Keyboard.JustDown(this.keys.attack) || Phaser.Input.Keyboard.JustDown(this.keys.attack2)) {
-                    this._restAtBench(nearbyBench);
-                }
-            } else {
-                // Hide all bench prompts
-                this.benches.forEach(b => b.showPrompt(false));
-            }
-        }
-
         // ---- NPC proximity & interaction ----
-        if (!this.isResting && !this.player.dead) {
+        if (!this.player.dead) {
             const nearbyNPC = this._getNearbyNPC();
             if (nearbyNPC) {
-                // Prioritise NPC prompt over bench prompt
-                const nearbyBench = this._getNearbyBench();
-                if (nearbyBench) nearbyBench.showPrompt(false);
-
                 nearbyNPC.showPrompt(true);
                 if (Phaser.Input.Keyboard.JustDown(this.keys.attack)) {
                     this.talkingNPC = nearbyNPC;
@@ -1648,6 +1806,9 @@ class GameScene extends Phaser.Scene {
         }
 
         this.player.update(delta);
+
+        // Landing camera catch-up bounce (after player state is updated)
+        this._checkLandingBounce();
 
         // Update enemies (filter out dead ones)
         this.enemyInstances = this.enemyInstances.filter(e => !e.dead);

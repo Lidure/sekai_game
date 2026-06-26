@@ -46,8 +46,7 @@ class NPC {
         this.typewriterPos = 0;
         this.currentLine = '';
 
-        // Cached dialogue box layout
-        this._box = { x: 150, y: 470, w: 500, h: 100 };
+        this._recalcBox();
 
         this._createVisuals();
         this._createPrompt();
@@ -60,6 +59,20 @@ class NPC {
     /* ================================================================== */
     /*  Visuals                                                             */
     /* ================================================================== */
+
+    _recalcBox() {
+        const cam = this.scene.cameras.main;
+        const zoom = cam ? cam.zoom : 1;
+        const sw = this.scene.scale.width;
+        const sh = this.scene.scale.height;
+        const w = Math.min(760, sw - 80);
+        const h = 120;
+        const sx = (sw - w) / 2 / zoom;
+        const sy = (sh - h - 30) / zoom;
+        this._box = {
+            x: sx, y: sy, w: w / zoom, h: h / zoom,
+        };
+    }
 
     _createVisuals() {
         this.gfx = this.scene.add.graphics().setDepth(5).setPosition(this.x, this.y);

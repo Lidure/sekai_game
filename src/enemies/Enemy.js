@@ -28,6 +28,7 @@ class Enemy {
         this.state = 'idle';
         this.dead = false;
         this.invulnTimer = 0;
+        this.hitstun = 0;
 
         // Stats
         this.hp = config.hp || 1;
@@ -64,6 +65,13 @@ class Enemy {
     update(delta, playerX, playerY) {
         if (this.dead) return;
         if (this.invulnTimer > 0) this.invulnTimer--;
+
+        // Hitstun: enemy freezes (no AI) while knockback velocity still slides them
+        if (this.hitstun > 0) {
+            this.hitstun--;
+            return;
+        }
+
         this._updateAI(delta, playerX, playerY);
     }
 
@@ -80,8 +88,9 @@ class Enemy {
      * @param {number} amount — raw damage from the attack
      * @param {number} knockbackX
      * @param {number} knockbackY
+     * @param {number} [hitstunFrames=8] — frames of AI freeze during knockback
      */
-    takeDamage(amount, knockbackX, knockbackY) {
+    takeDamage(amount, knockbackX, knockbackY, hitstunFrames = 8) {
         if (this.invulnTimer > 0 || this.dead) return;
         this.hp -= amount;
         this.invulnTimer = 30; // 0.5s i-frames
@@ -97,9 +106,16 @@ class Enemy {
             }
         });
 
-        // Knockback
+        // Knockback velocity (slides enemy during hitStop/hitstun)
         this.body.velocity.x += knockbackX;
         this.body.velocity.y += knockbackY;
+
+        // Ensure a small vertical pop so the enemy visibly lifts off the ground.
+        // This adds to any existing knockbackY for a satisfying knockback arc.
+        this.body.velocity.y = Math.min(this.body.velocity.y, -80);
+
+        // Hitstun: freeze AI for given frames, enemy slides from knockback velocity
+        this.hitstun = hitstunFrames;
 
         // Death check
         if (this.hp <= 0) {

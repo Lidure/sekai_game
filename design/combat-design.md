@@ -33,10 +33,11 @@ The player should feel **precise, rhythmic, and emotionally expressive**. Each s
 
 | Action | Key | Type |
 |--------|-----|------|
-| Attack | `J` or `Z` | On-press (JustDown) |
-| (Movement) | WASD / Arrows | Held |
-| (Jump) | `W` / Up / Space | JustDown |
-| (Dash) | Not yet implemented | — |
+| Attack | `J` | On-press (JustDown) |
+| (Movement) | `A` / `D` | Held |
+| (Look) | `W` / `S` | Held |
+| (Jump) | `K` | JustDown |
+| (Dash) | `L` | JustDown |
 
 ### 1.3 Ground Combo: Two-Hit Slash Chain
 
@@ -49,7 +50,7 @@ The ground combo has two stages: **Slash 1** and **Slash 2**. Pressing attack du
 | **Startup** | 1–5 | 5f / 83ms | Player flashes white. Slight lunge forward (20px over 5 frames). No hitbox yet. |
 | **Active** | 6–9 | 4f / 67ms | Hitbox is live. Can hit the boss. |
 | **Recovery** | 10–17 | 8f / 133ms | Cannot attack. Can move (reduced speed, 50% normal). |
-| **Combo Window** | 11–15 | 5f / 83ms | If `J`/`Z` pressed during these frames → chain to Slash 2 startup. Otherwise → end. |
+| **Combo Window** | 11–15 | 5f / 83ms | If `J` pressed during these frames → chain to Slash 2 startup. Otherwise → end. |
 | **Total (no chain)** | 1–17 | 17f / 283ms | Full animation. |
 | **Total (chained)** | 1–10 (+ Slash 2) | 10f + Slash 2 | Combo continues. |
 
@@ -69,12 +70,12 @@ The ground combo has two stages: **Slash 1** and **Slash 2**. Pressing attack du
 
 #### Key Design Notes:
 - The combo window (frames 11–15 of Slash 1) overlaps with early recovery. This means the player must press **before** Slash 1 visually finishes — it's predictive, not reactive.
-- If the player mashes `J`/`Z`, the input during Slash 1 active frames is **buffered** (stored for up to 5 frames). If the buffer aligns with the combo window, it chains. This prevents pure mashing from working — you need to learn the rhythm.
+- If the player mashes `J`, the input during Slash 1 active frames is **buffered** (stored for up to 5 frames). If the buffer aligns with the combo window, it chains. This prevents pure mashing from working — you need to learn the rhythm.
 - **Buffer implementation**: Store the last attack press. On each frame during recovery, check if buffer time is within the combo window. Clear buffer after use.
 
 ### 1.4 Air Attack (Downward Thrust)
 
-Triggered by pressing `J`/`Z` while the player is **airborne** (not touching ground) AND has upward velocity (rising) OR has passed the apex of the jump.
+Triggered by pressing `J` while the player is **airborne** (not touching ground) AND has upward velocity (rising) OR has passed the apex of the jump.
 
 | Phase | Frames (60fps) | Duration (ms) | Behavior |
 |-------|----------------|---------------|----------|
@@ -183,7 +184,7 @@ this.physics.add.overlap(this.slashHitbox, this.boss, this.onHit, null, this);
 | **Special damage** | 35 base damage, full-screen arc, 8f hit stop, 6px shake |
 
 **Special Attack Details** (future implementation — reserve the design space now):
-- Trigger: `J`/`Z` held for 0.5s (or dedicated special key) when meter ≥ 50
+- Trigger: `J` held for 0.5s (or dedicated special key) when meter ≥ 50
 - Wide hitbox: 64px × 48px in front of player
 - Cleaves through all enemies
 - Consumes 50 meter

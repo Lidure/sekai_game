@@ -19,8 +19,16 @@ class MapView {
         this.roomLabels = [];
         this._exitMarkers = [];
         this._nodeCenters = new Map();
+        this._drawnConnections = new Set();
 
-        this.panel = { x: 44, y: 76, w: 712, h: 448 };
+        const w = scene.scale.width;
+        const h = scene.scale.height;
+        this.panel = {
+            x: Math.round(w * 0.06),
+            y: Math.round(h * 0.10),
+            w: Math.round(w * 0.88),
+            h: Math.round(h * 0.68),
+        };
         this.graph = {
             x: this.panel.x + 36,
             y: this.panel.y + 74,
@@ -39,13 +47,13 @@ class MapView {
         this.nodeGfx = scene.add.graphics();
         this.playerGfx = scene.add.graphics();
 
-        this.titleText = scene.add.text(400, 46, 'MAP', {
+        this.titleText = scene.add.text(w / 2, 46, 'MAP', {
             fontSize: '18px',
             fontFamily: 'monospace',
             color: '#7FE0DE',
         }).setOrigin(0.5).setScrollFactor(0).setDepth(201);
 
-        this.helpText = scene.add.text(400, 520, 'M TOGGLE', {
+        this.helpText = scene.add.text(w / 2, h - 28, 'M TOGGLE', {
             fontSize: '11px',
             fontFamily: 'monospace',
             color: '#5a6585',
@@ -77,9 +85,16 @@ class MapView {
                     gridX: def.mapGrid.x,
                     gridY: def.mapGrid.y,
                     name: def.name || id.toUpperCase(),
+                    pois: this._collectPOIs(def),
                 };
             })
             .filter(Boolean);
+    }
+
+    _collectPOIs(roomDef) {
+        const pois = [];
+        if (roomDef.bossTrigger) pois.push({ type: 'boss' });
+        return pois;
     }
 
     _buildKeyboard() {
@@ -102,6 +117,8 @@ class MapView {
         if (this.scene.scene && this.scene.scene.isPaused()) return;
 
         this.isOpen = true;
+        this._savedZoom = this.scene.cameras.main.zoom;
+        this.scene.cameras.main.setZoom(1);
         this.container.setVisible(true);
         this._syncState(
             this.scene.currentRoomId,
@@ -123,6 +140,10 @@ class MapView {
     _close() {
         if (this.destroyed) return;
         this.isOpen = false;
+        if (this._savedZoom !== undefined) {
+            this.scene.cameras.main.setZoom(this._savedZoom);
+            this._savedZoom = undefined;
+        }
         this.container.setVisible(false);
         this.playerGfx.clear();
         if (this._physicsPausedByMap && this.scene.physics && this.scene.physics.world && this.scene.physics.world.isPaused) {
@@ -162,25 +183,43 @@ class MapView {
         this.roomPositions.clear();
         this._clearRoomLabels();
         this._clearExitMarkers();
+        this._adjacencyCache = null;
 
         this.backdrop.clear();
         this.frameGfx.clear();
         this.connectionGfx.clear();
         this.nodeGfx.clear();
         this.playerGfx.clear();
+        this._drawnConnections.clear();
 
         this._drawBackdrop();
         this._drawFrame();
         this._drawConnections();
         this._drawNodes();
+        this._drawUnknownRooms();
         this._drawPlayerMarker();
     }
 
+    _adjacentRoomIds() {
+        if (this._adjacencyCache) return this._adjacencyCache;
+        const adj = new Set();
+        if (typeof RoomDef === 'undefined' || !RoomDef.getConnections) return adj;
+        this.rooms.forEach(room => {
+            RoomDef.getConnections(room.id).forEach(otherId => {
+                if (this.roomIndex.has(otherId)) adj.add(otherId);
+            });
+        });
+        this._adjacencyCache = adj;
+        return adj;
+    }
+
     _drawBackdrop() {
+        const w = this.scene.scale.width;
+        const h = this.scene.scale.height;
         this.backdrop.fillStyle(0x04050c, 0.9);
-        this.backdrop.fillRect(0, 0, 800, 600);
+        this.backdrop.fillRect(0, 0, w, h);
         this.backdrop.fillStyle(0x0b1020, 0.18);
-        this.backdrop.fillRect(44, 76, 712, 448);
+        this.backdrop.fillRect(this.panel.x, this.panel.y, this.panel.w, this.panel.h);
     }
 
     _drawFrame() {
@@ -222,38 +261,31 @@ class MapView {
 
     _drawConnections() {
         this._layoutRooms();
-        const drawn = new Set();
+        if (typeof RoomDef === 'undefined' || !RoomDef.CONNECTIONS) return;
 
-        this.rooms.forEach(room => {
-            const source = this.roomPositions.get(room.id);
-            if (!source) return;
-            const exits = Array.isArray(room.def.exits) ? room.def.exits : [];
+        for (const [idA, idB] of RoomDef.CONNECTIONS) {
+            const source = this.roomPositions.get(idA);
+            const dest = this.roomPositions.get(idB);
+            if (!source || !dest) continue;
 
-            exits.forEach(exit => {
-                const target = this.roomIndex.get(exit.targetRoom);
-                if (!target) return;
-                const key = [room.id, target.id].sort().join('::');
-                if (drawn.has(key)) return;
-                drawn.add(key);
+            const key = [idA, idB].sort().join('::');
+            if (this._drawnConnections.has(key)) continue;
+            this._drawnConnections.add(key);
 
-                const dest = this.roomPositions.get(target.id);
-                if (!dest) return;
-                const active = this.roomState.get(room.id)?.visited || this.roomState.get(target.id)?.visited || this.roomState.get(room.id)?.current || this.roomState.get(target.id)?.current;
-                const color = active ? 0x7fe0de : 0x2b3552;
-                const sx = source.cx;
-                const sy = source.cy;
-                const dx = dest.cx;
-                const dy = dest.cy;
-                const midX = sx + (dx - sx) * 0.5;
-                this.connectionGfx.lineStyle(active ? 3 : 2, color, active ? 0.85 : 0.42);
-                this.connectionGfx.beginPath();
-                this.connectionGfx.moveTo(sx, sy);
-                this.connectionGfx.lineTo(midX, sy);
-                this.connectionGfx.lineTo(midX, dy);
-                this.connectionGfx.lineTo(dx, dy);
-                this.connectionGfx.strokePath();
-            });
-        });
+            const active = this.roomState.get(idA)?.visited || this.roomState.get(idB)?.visited ||
+                           this.roomState.get(idA)?.current || this.roomState.get(idB)?.current;
+            const color = active ? 0x7fe0de : 0x2b3552;
+            const sx = source.cx, sy = source.cy;
+            const dx = dest.cx, dy = dest.cy;
+            const midX = sx + (dx - sx) * 0.5;
+            this.connectionGfx.lineStyle(active ? 3 : 2, color, active ? 0.85 : 0.42);
+            this.connectionGfx.beginPath();
+            this.connectionGfx.moveTo(sx, sy);
+            this.connectionGfx.lineTo(midX, sy);
+            this.connectionGfx.lineTo(midX, dy);
+            this.connectionGfx.lineTo(dx, dy);
+            this.connectionGfx.strokePath();
+        }
     }
 
     _drawNodes() {
@@ -282,14 +314,82 @@ class MapView {
             this.nodeGfx.fillStyle(state.current ? 0xffffff : 0x6b7c99, state.current ? 1 : 0.8);
             this.nodeGfx.fillTriangle(pos.cx, pos.y + pos.h + 2, pos.cx - 4, pos.y + pos.h + 8, pos.cx + 4, pos.y + pos.h + 8);
 
-            const label = this.scene.add.text(pos.cx, pos.cy - 1, room.name, {
-                fontSize: '9px',
+            if (state.current || state.visited) {
+                const label = this.scene.add.text(pos.cx, pos.cy - 1, room.name, {
+                    fontSize: state.current ? '10px' : '9px',
+                    fontFamily: 'monospace',
+                    color: state.current ? '#ffffff' : '#c4d7f2',
+                    align: 'center',
+                }).setOrigin(0.5).setScrollFactor(0).setDepth(201);
+                this.container.add(label);
+                this.roomLabels.push(label);
+            }
+
+            // POI icons inside visited/current room nodes
+            if ((state.current || state.visited) && room.pois.length > 0) {
+                const icons = this._poiIconsForRoom(room, pos);
+                icons.forEach(ico => {
+                    this.nodeGfx.fillStyle(ico.color, 0.9);
+                    if (ico.shape === 'circle') this.nodeGfx.fillCircle(ico.x, ico.y, 3);
+                    else if (ico.shape === 'square') this.nodeGfx.fillRect(ico.x - 2.5, ico.y - 2.5, 5, 5);
+                    else if (ico.shape === 'diamond') {
+                        this.nodeGfx.fillTriangle(ico.x, ico.y - 3.5, ico.x - 3, ico.y, ico.x + 3, ico.y);
+                        this.nodeGfx.fillTriangle(ico.x, ico.y + 3.5, ico.x - 3, ico.y, ico.x + 3, ico.y);
+                    } else if (ico.shape === 'triangle') {
+                        this.nodeGfx.fillTriangle(ico.x, ico.y - 3, ico.x - 3, ico.y + 2, ico.x + 3, ico.y + 2);
+                    }
+                });
+            }
+        });
+    }
+
+    _poiIconsForRoom(room, pos) {
+        const icons = [];
+        const cx = pos.cx, cy = pos.cy;
+        const startX = cx - ((room.pois.length - 1) * 7) / 2;
+        room.pois.forEach((poi, i) => {
+            const x = startX + i * 7;
+            const y = cy + 12;
+            let color = 0x7FE0DE, shape = 'square';
+            switch (poi.type) {
+                case 'bench':    color = 0x7FE0DE; shape = 'square'; break;
+                case 'npc':      color = 0xA78BFA; shape = 'circle'; break;
+                case 'ability':  color = 0xFBBF24; shape = 'diamond'; break;
+                case 'gate':     color = 0xF87171; shape = 'triangle'; break;
+                case 'boss':     color = 0xEF4444; shape = 'diamond'; break;
+                case 'upgrade':  color = 0x34D399; shape = 'circle'; break;
+            }
+            icons.push({ x, y, color, shape, type: poi.type });
+        });
+        return icons;
+    }
+
+    _drawUnknownRooms() {
+        const adj = this._adjacentRoomIds();
+        this.rooms.forEach(room => {
+            const state = this.roomState.get(room.id);
+            if (state && state.visited) return;
+            if (!adj.has(room.id)) return;
+
+            const pos = this.roomPositions.get(room.id);
+            if (!pos) return;
+
+            const fill = 0x0a1120;
+            const line = 0x1e2942;
+
+            this.nodeGfx.fillStyle(fill, 0.7);
+            this.nodeGfx.fillRoundedRect(pos.x, pos.y, pos.w, pos.h, 4);
+            this.nodeGfx.lineStyle(1, line, 0.5);
+            this.nodeGfx.strokeRoundedRect(pos.x, pos.y, pos.w, pos.h, 4);
+
+            const qLabel = this.scene.add.text(pos.cx, pos.cy, '???', {
+                fontSize: '10px',
                 fontFamily: 'monospace',
-                color: state.current ? '#ffffff' : state.visited ? '#c4d7f2' : '#556179',
+                color: '#3a4a6a',
                 align: 'center',
             }).setOrigin(0.5).setScrollFactor(0).setDepth(201);
-            this.container.add(label);
-            this.roomLabels.push(label);
+            this.container.add(qLabel);
+            this.roomLabels.push(qLabel);
         });
     }
 
@@ -299,8 +399,8 @@ class MapView {
         const room = this.roomIndex.get(this.currentRoomId);
         if (!pos || !room) return;
 
-        const roomW = room.def.width || 800;
-        const roomH = room.def.height || 600;
+        const roomW = 1280;
+        const roomH = 720;
         const localX = Phaser.Math.Clamp(this.playerX || 0, 0, roomW);
         const localY = Phaser.Math.Clamp(this.playerY || 0, 0, roomH);
         const markerX = pos.x + 10 + ((pos.w - 20) * (localX / roomW));

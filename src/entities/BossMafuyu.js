@@ -2,7 +2,7 @@ class BossMafuyu {
     constructor(scene, x, y) {
         this.scene = scene;
         this.sprite = scene.physics.add.sprite(x, y, 'boss_idle');
-        this.sprite.setScale(0.18);
+        this.sprite.setScale(0.24);
         // Texture source: 720x720, scale 0.18 → ~130x130 visual; body 267x356 in texture space → 48x64 physics body
         this.sprite.body.setSize(267, 356);
         // Offset centers the 48x64 body on the 129.6x129.6 scaled sprite
@@ -10,7 +10,7 @@ class BossMafuyu {
         this.sprite.setDepth(15);
         this.sprite.setCollideWorldBounds(true);
 
-        this.maxHp = 300;
+        this.maxHp = 600;
         this.hp = this.maxHp;
         this.phase = 1;
         this.state = 'idle';
@@ -50,17 +50,41 @@ class BossMafuyu {
         if (!this.vulnerable || this.invulnTimer > 0 || this.defeated) return;
         this.hp -= amount;
         this.invulnTimer = 8;
-        this.sprite.setTint(0xffffff);
-        this.scene.time.delayedCall(80, () => this.sprite.clearTint());
-        this.body.velocity.x = this.facingRight ? -knockbackX : knockbackX;
-        this.body.velocity.y = knockbackY;
+
+        // Boss hit flash: blue-white tint (not full white) — communicates weight
+        this.sprite.setTint(0x4488ff);
+        this.scene.time.delayedCall(60, () => {
+            if (this.sprite && this.sprite.active && !this.defeated) this.sprite.clearTint();
+        });
+
+        // Boss micro-stagger tween: brief positional offset instead of velocity knockback.
+        // Boss stands her ground — she's too heavy to be pushed around.
+        const staggerDir = this.facingRight ? -1 : 1;
+        this.scene.tweens.add({
+            targets: this.sprite,
+            x: this.sprite.x + staggerDir * 6,
+            duration: 50,
+            ease: 'Quad.easeOut',
+            yoyo: true,
+        });
+
+        // Squash/stretch pulse — impact ripple visual
+        this.scene.tweens.add({
+            targets: this.sprite,
+            scaleX: this.sprite.scaleX * 1.03,
+            scaleY: this.sprite.scaleY * 0.97,
+            duration: 50,
+            yoyo: true,
+            ease: 'Quad.easeOut',
+        });
+
         // Audio — metal clang on boss hit
         this.scene.sound.play('sfx_boss_hit', { volume: 0.6, detune: Phaser.Math.Between(-80, 80) });
 
         if (this.hp <= this.maxHp / 2 && this.phase === 1) {
             this._startPhaseTransition();
         }
-        if (this.hp <= 50 && this.phase === 2) {
+        if (this.hp <= 100 && this.phase === 2) {
             this.desperate = true;
         }
         if (this.hp <= 0) {

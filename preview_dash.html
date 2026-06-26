@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dash Frames Preview</title>
+    <style>
+        body { background: #0a0a1a; color: #fff; font-family: monospace; padding: 20px; }
+        .row { display: flex; gap: 20px; margin: 20px 0; flex-wrap: wrap; }
+        .frame { text-align: center; }
+        .frame canvas { border: 1px solid #333; image-rendering: pixelated; }
+        .frame p { margin: 8px 0 0; color: #7FE0DE; font-size: 14px; }
+        h1 { color: #a8d8ff; }
+        .label { color: #666; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <h1>mfy_dash.png — 4 Frame Preview</h1>
+    <p class="label">Source: 1024×256, 1 row × 4 cols, 256×256 per frame → resized to 64×64</p>
+
+    <h2 style="color:#7FE0DE">Original 256×256</h2>
+    <div class="row" id="originals"></div>
+
+    <h2 style="color:#7FE0DE">Resized 64×64 (in-game)</h2>
+    <div class="row" id="resized"></div>
+
+    <h2 style="color:#7FE0DE">Scaled 4× for visibility (256×256 display)</h2>
+    <div class="row" id="scaled4x"></div>
+
+    <script>
+        const img = new Image();
+        img.src = 'assets/images/player_mfy/mfy_dash.png';
+        img.onload = () => {
+            const srcSize = 256;
+            const dstSize = 64;
+
+            for (let i = 0; i < 4; i++) {
+                // Original 256×256
+                const c1 = document.createElement('canvas');
+                c1.width = srcSize; c1.height = srcSize;
+                const ctx1 = c1.getContext('2d');
+                ctx1.imageSmoothingEnabled = false;
+                ctx1.drawImage(img, i * srcSize, 0, srcSize, srcSize, 0, 0, srcSize, srcSize);
+                const d1 = document.createElement('div');
+                d1.className = 'frame';
+                d1.appendChild(c1);
+                const p1 = document.createElement('p');
+                p1.textContent = `Frame ${i} (${srcSize}×${srcSize})`;
+                d1.appendChild(p1);
+                document.getElementById('originals').appendChild(d1);
+
+                // Resized 64×64
+                const c2 = document.createElement('canvas');
+                c2.width = dstSize; c2.height = dstSize;
+                const ctx2 = c2.getContext('2d');
+                ctx2.imageSmoothingEnabled = false;
+                ctx2.drawImage(img, i * srcSize, 0, srcSize, srcSize, 0, 0, dstSize, dstSize);
+                const d2 = document.createElement('div');
+                d2.className = 'frame';
+                d2.appendChild(c2);
+                const p2 = document.createElement('p');
+                p2.textContent = `Frame ${i} (${dstSize}×${dstSize})`;
+                d2.appendChild(p2);
+                document.getElementById('resized').appendChild(d2);
+
+                // Scaled 4× (256×256 display from 64×64)
+                const c3 = document.createElement('canvas');
+                c3.width = 256; c3.height = 256;
+                const ctx3 = c3.getContext('2d');
+                ctx3.imageSmoothingEnabled = false;
+                ctx3.drawImage(c2, 0, 0, dstSize, dstSize, 0, 0, 256, 256);
+                const d3 = document.createElement('div');
+                d3.className = 'frame';
+                d3.appendChild(c3);
+                const p3 = document.createElement('p');
+                p3.textContent = `Frame ${i} (4× zoom)`;
+                d3.appendChild(p3);
+                document.getElementById('scaled4x').appendChild(d3);
+            }
+        };
+    </script>
+</body>
+</html>

@@ -4,7 +4,8 @@
  * Features:
  *   - Dark background with floating teal/purple particles (consistent with MenuScene)
  *   - "CREDITS" title fixed at top
- *   - Auto-scrolling credit text (bottom→top over 15s)
+ *   - Auto-scrolling credit text (bottom→top over 30s)
+ *   - Gradient fade at top/bottom edges so text doesn't overlap title
  *   - J to skip scroll / J to return to menu after scroll completes
  *   - "THANK YOU FOR PLAYING" + blinking "PRESS J TO RETURN" at end
  *   - Fade transition back to MenuScene via SceneManager
@@ -19,15 +20,21 @@ class CreditsScene extends Phaser.Scene {
     /* ------------------------------------------------------------------ */
 
     create() {
-        this.canReturn = false;       // True after scroll completes + delay
-        this.scrollComplete = false;  // True when scroll reaches end
+        this.canReturn = false;
+        this.scrollComplete = false;
         this.particles = [];
 
         this._buildBackground();
         this._buildTitle();
         this._buildEndTexts();
         this._buildCredits();
+        this._buildFadeEdges();
         this._createControls();
+
+        // BGM
+        this.bgm = this.sound.add('bgm_credits', { loop: true, volume: 0 });
+        this.bgm.play();
+        this.tweens.add({ targets: this.bgm, volume: 0.30, duration: 1000 });
 
         // Fade in on entry
         this.cameras.main.fadeIn(500);
@@ -43,38 +50,38 @@ class CreditsScene extends Phaser.Scene {
 
     _buildBackground() {
         const bg = this.add.graphics().setDepth(0);
+        const w = this.scale.width;
+        const h = this.scale.height;
 
-        // Solid dark fill
         bg.fillStyle(0x0a0a1a);
-        bg.fillRect(0, 0, 960, 720);
+        bg.fillRect(0, 0, w, h);
 
-        // Subtle grid
         bg.lineStyle(1, 0x1a1a3e, 0.25);
-        for (let x = 0; x <= 960; x += 50) {
-            bg.lineBetween(x, 0, x, 720);
+        for (let x = 0; x <= w; x += 50) {
+            bg.lineBetween(x, 0, x, h);
         }
-        for (let y = 0; y <= 720; y += 50) {
-            bg.lineBetween(0, y, 960, y);
+        for (let y = 0; y <= h; y += 50) {
+            bg.lineBetween(0, y, w, y);
         }
 
-        // Small decorative crosses at grid intersections
         bg.lineStyle(1, 0x1a1a3e, 0.15);
-        for (let x = 0; x <= 960; x += 50) {
-            for (let y = 0; y <= 720; y += 50) {
+        for (let x = 0; x <= w; x += 50) {
+            for (let y = 0; y <= h; y += 50) {
                 bg.fillStyle(0x1a1a3e, 0.2);
                 bg.fillRect(x - 1, y - 1, 3, 3);
             }
         }
 
-        // Floating particles (teal / purple dots)
         this._createParticles();
     }
 
     _createParticles() {
         const colors = [0x44ccff, 0x9966ff, 0x66eeff];
+        const w = this.scale.width;
+        const h = this.scale.height;
         for (let i = 0; i < 40; i++) {
-            const x = Phaser.Math.Between(0, 960);
-            const y = Phaser.Math.Between(0, 720);
+            const x = Phaser.Math.Between(0, w);
+            const y = Phaser.Math.Between(0, h);
             const size = Phaser.Math.FloatBetween(1, 3);
             const color = Phaser.Utils.Array.GetRandom(colors);
             const speed = Phaser.Math.Between(20, 60);
@@ -100,10 +107,9 @@ class CreditsScene extends Phaser.Scene {
             p.obj.y -= p.speed * dt;
             p.obj.x += Math.sin(time + p.phase) * 0.5;
 
-            // Reset when off-screen top
             if (p.obj.y < -10) {
-                p.obj.y = 730;
-                p.obj.x = Phaser.Math.Between(0, 960);
+                p.obj.y = this.scale.height + 10;
+                p.obj.x = Phaser.Math.Between(0, this.scale.width);
             }
         }
     }
@@ -113,16 +119,15 @@ class CreditsScene extends Phaser.Scene {
     /* ------------------------------------------------------------------ */
 
     _buildTitle() {
-        this.add.text(480, 72, 'CREDITS', {
-            fontSize: '36px',
+        this.add.text(this.scale.width / 2, 48, 'CREDITS', {
+            fontSize: '32px',
             fontFamily: 'monospace',
             color: '#a8d8ff',
-        }).setOrigin(0.5).setDepth(10);
+        }).setOrigin(0.5).setDepth(20);
 
-        // Decorative line under title
-        const deco = this.add.graphics().setDepth(9);
+        const deco = this.add.graphics().setDepth(19);
         deco.lineStyle(1, 0x2a6a9f, 0.3);
-        deco.lineBetween(360, 108, 600, 108);
+        deco.lineBetween(this.scale.width / 2 - 120, 78, this.scale.width / 2 + 120, 78);
     }
 
     /* ------------------------------------------------------------------ */
@@ -130,13 +135,13 @@ class CreditsScene extends Phaser.Scene {
     /* ------------------------------------------------------------------ */
 
     _buildEndTexts() {
-        this.endThankYou = this.add.text(480, 312, 'THANK YOU FOR PLAYING', {
+        this.endThankYou = this.add.text(this.scale.width / 2, 312, 'THANK YOU FOR PLAYING', {
             fontSize: '26px',
             fontFamily: 'monospace',
             color: '#7FE0DE',
         }).setOrigin(0.5).setDepth(10).setAlpha(0);
 
-        this.endReturn = this.add.text(480, 372, 'PRESS J TO RETURN', {
+        this.endReturn = this.add.text(this.scale.width / 2, 372, 'PRESS J TO RETURN', {
             fontSize: '16px',
             fontFamily: 'monospace',
             color: '#4a6a9f',
@@ -148,7 +153,6 @@ class CreditsScene extends Phaser.Scene {
     /* ------------------------------------------------------------------ */
 
     _buildCredits() {
-        // Credit data: each entry is either a {text, style} object or null (spacer)
         const creditData = [
             { text: 'SEKAI: A 25-ji Metroidvania', style: 'title' },
             null,
@@ -176,7 +180,6 @@ class CreditsScene extends Phaser.Scene {
             { text: 'but they remain."',        style: 'quote' },
         ];
 
-        // Style presets used by credit entries
         const styles = {
             title:   { fontSize: '28px', fontFamily: 'monospace', color: '#a8d8ff' },
             section: { fontSize: '20px', fontFamily: 'monospace', color: '#7FE0DE' },
@@ -185,13 +188,13 @@ class CreditsScene extends Phaser.Scene {
             quote:   { fontSize: '18px', fontFamily: 'monospace', color: '#7FE0DE' },
         };
 
-        // Vertical leading (px) per style type
         const leadings = {
             title: 42, section: 32, body: 28, small: 26, quote: 28, spacer: 28,
         };
 
         this.creditContainer = this.add.container(0, 0).setDepth(5);
         let y = 0;
+        const centerX = this.scale.width / 2;
 
         creditData.forEach((entry) => {
             if (entry === null) {
@@ -200,24 +203,24 @@ class CreditsScene extends Phaser.Scene {
             }
             const style = styles[entry.style] || styles.body;
             const leading = leadings[entry.style] || 24;
-            const text = this.add.text(480, y, entry.text, style)
+            const text = this.add.text(centerX, y, entry.text, style)
                 .setOrigin(0.5, 0);
             this.creditContainer.add(text);
             y += leading;
         });
 
         this.creditHeight = y;
-        const startY = 620;                    // Below bottom edge of screen
-        const endY = -(this.creditHeight + 80); // Above top edge of screen
+        const startY = this.scale.height + 20;
+        const endY = -(this.creditHeight + 80);
         this.finalScrollY = endY;
 
         this.creditContainer.y = startY;
 
-        // Auto-scroll over 15 seconds
+        // Auto-scroll over 30 seconds (slower)
         this.scrollTween = this.tweens.add({
             targets: this.creditContainer,
             y: endY,
-            duration: 15000,
+            duration: 30000,
             ease: 'Linear',
             onComplete: () => {
                 this._onScrollComplete();
@@ -226,14 +229,43 @@ class CreditsScene extends Phaser.Scene {
     }
 
     /* ------------------------------------------------------------------ */
+    /*  Gradient fade edges (top + bottom)                                 */
+    /* ------------------------------------------------------------------ */
+
+    _buildFadeEdges() {
+        const w = this.scale.width;
+        const h = this.scale.height;
+        const fade = this.add.graphics().setDepth(15);
+
+        // Top fade: opaque at top → transparent at y=130
+        const topFadeH = 130;
+        const steps = 26;
+        const stepH = topFadeH / steps;
+        for (let i = 0; i < steps; i++) {
+            const a = 1 - (i / steps);
+            fade.fillStyle(0x0a0a1a, a);
+            fade.fillRect(0, i * stepH, w, stepH + 1);
+        }
+
+        // Bottom fade: transparent at y=h-80 → opaque at bottom
+        const botFadeH = 80;
+        const botSteps = 16;
+        const botStepH = botFadeH / botSteps;
+        for (let i = 0; i < botSteps; i++) {
+            const a = i / botSteps;
+            fade.fillStyle(0x0a0a1a, a);
+            fade.fillRect(0, h - botFadeH + i * botStepH, w, botStepH + 1);
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
     /*  Scroll completion / skip handling                                  */
     /* ------------------------------------------------------------------ */
 
     _onScrollComplete() {
-        if (this.scrollComplete) return; // Guard against double-fire
+        if (this.scrollComplete) return;
         this.scrollComplete = true;
 
-        // Reveal "THANK YOU FOR PLAYING" with a fade-up
         this.tweens.add({
             targets: this.endThankYou,
             alpha: 1,
@@ -241,7 +273,6 @@ class CreditsScene extends Phaser.Scene {
             ease: 'Power2',
         });
 
-        // Blinking "PRESS J TO RETURN" (with delay so it appears after the thank-you)
         this.tweens.add({
             targets: this.endReturn,
             alpha: { from: 0.3, to: 1 },
@@ -252,7 +283,6 @@ class CreditsScene extends Phaser.Scene {
             delay: 600,
         });
 
-        // Brief delay before accepting return input
         this.time.delayedCall(500, () => {
             this.canReturn = true;
         });
@@ -285,6 +315,14 @@ class CreditsScene extends Phaser.Scene {
 
     _returnToMenu() {
         this.sound.play('sfx_ui_confirm', { volume: 0.5 });
+        if (this.bgm) {
+            this.tweens.add({
+                targets: this.bgm,
+                volume: 0,
+                duration: 500,
+                onComplete: () => { this.bgm.stop(); },
+            });
+        }
         SceneManager.goTo(this, 'MenuScene');
     }
 }
