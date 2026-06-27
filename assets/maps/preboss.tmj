@@ -3365,86 +3365,6 @@
         0,
         0,
         0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
         1,
         1,
         1,
@@ -3525,6 +3445,86 @@
         1,
         1,
         1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
         0,
         0,
         0,
@@ -4306,6 +4306,8 @@
         0,
         0,
         0,
+        1,
+        1,
         0,
         0,
         0,
@@ -4532,6 +4534,9 @@
         0,
         0,
         0,
+        1,
+        1,
+        1,
         0,
         0,
         0,
@@ -4775,14 +4780,9 @@
         0,
         0,
         0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
+        1,
+        1,
+        1,
         0,
         0,
         0,
@@ -5521,11 +5521,11 @@
         1,
         1,
         1,
-        0,
-        0,
-        0,
         1,
         1,
+        1,
+        0,
+        0,
         0,
         0,
         0,
@@ -7456,6 +7456,37 @@
               "value": "right"
             }
           ]
+        },
+        {
+          "id": 3,
+          "name": "left-mid",
+          "type": "exit",
+          "x": 0,
+          "y": 624,
+          "width": 16,
+          "height": 60,
+          "properties": [
+            {
+              "name": "targetRoom",
+              "type": "string",
+              "value": "mid"
+            },
+            {
+              "name": "targetX",
+              "type": "int",
+              "value": 1200
+            },
+            {
+              "name": "targetY",
+              "type": "int",
+              "value": 660
+            },
+            {
+              "name": "dir",
+              "type": "string",
+              "value": "left"
+            }
+          ]
         }
       ],
       "opacity": 1,
@@ -7470,7 +7501,7 @@
       "objects": [
         {
           "id": 3,
-          "name": "enemy_sf_6",
+          "name": "enemy_bl_2",
           "type": "enemy",
           "x": 800,
           "y": 636,
@@ -7485,44 +7516,18 @@
             {
               "name": "enemyType",
               "type": "string",
-              "value": "shadow"
+              "value": "bloated"
             },
             {
               "name": "spawnId",
               "type": "string",
-              "value": "sf_6"
+              "value": "bl_2"
             }
           ]
         },
         {
           "id": 4,
-          "name": "enemy_sf_7",
-          "type": "enemy",
-          "x": 1120,
-          "y": 636,
-          "width": 0,
-          "height": 0,
-          "properties": [
-            {
-              "name": "spawnType",
-              "type": "string",
-              "value": "enemy"
-            },
-            {
-              "name": "enemyType",
-              "type": "string",
-              "value": "shadow"
-            },
-            {
-              "name": "spawnId",
-              "type": "string",
-              "value": "sf_7"
-            }
-          ]
-        },
-        {
-          "id": 5,
-          "name": "enemy_sk_1",
+          "name": "enemy_sk_2",
           "type": "enemy",
           "x": 480,
           "y": 636,
@@ -7542,12 +7547,12 @@
             {
               "name": "spawnId",
               "type": "string",
-              "value": "sk_1"
+              "value": "sk_2"
             }
           ]
         },
         {
-          "id": 6,
+          "id": 5,
           "name": "enemy_fl_4",
           "type": "enemy",
           "x": 960,
@@ -7578,7 +7583,7 @@
           ]
         },
         {
-          "id": 7,
+          "id": 6,
           "name": "enemy_bat_2",
           "type": "enemy",
           "x": 800,
@@ -7609,10 +7614,10 @@
           ]
         },
         {
-          "id": 8,
+          "id": 7,
           "name": "collect_hp_2",
           "type": "collectible",
-          "x": 1088,
+          "x": 1008,
           "y": 360,
           "width": 0,
           "height": 0,
@@ -7640,7 +7645,7 @@
           ]
         },
         {
-          "id": 9,
+          "id": 8,
           "name": "collect_health_5",
           "type": "collectible",
           "x": 320,
@@ -7676,7 +7681,7 @@
           ]
         },
         {
-          "id": 10,
+          "id": 9,
           "name": "collect_health_6",
           "type": "collectible",
           "x": 1120,
@@ -7708,6 +7713,37 @@
               "name": "persistent",
               "type": "bool",
               "value": false
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "name": "collect_feel_4",
+          "type": "collectible",
+          "x": 800,
+          "y": 108,
+          "width": 0,
+          "height": 0,
+          "properties": [
+            {
+              "name": "spawnType",
+              "type": "string",
+              "value": "collectible"
+            },
+            {
+              "name": "collectType",
+              "type": "string",
+              "value": "feelings_up"
+            },
+            {
+              "name": "saveId",
+              "type": "string",
+              "value": "feel_4"
+            },
+            {
+              "name": "value",
+              "type": "int",
+              "value": 50
             }
           ]
         }

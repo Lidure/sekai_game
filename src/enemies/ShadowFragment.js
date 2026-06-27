@@ -1,45 +1,61 @@
 /**
- * ShadowFragment — Patrol + Chase enemy with SPLIT attack.
+ * ShadowFragment — Ambush predator with SPLIT attack.
  *
- * State machine:
- *   PATROL → moves in a direction, reverses at edges/walls
- *         → detects player within 150px → CHASE
- *   CHASE  → moves toward player at increased speed
- *         → player escapes or hits wall → PATROL
- *   SPLIT  → first hit: red tint telegraph (0.6s), then spawn 2 children
+ * Parent state machine (HK-style):
+ *   AMBUSH → translucent α=0.3, stationary. Player within 120px → ALERT
+ *   ALERT  → 0.3s telegraph (red glow, scale pulse) → RUSH
+ *   RUSH   → 2x speed charge at player, 0.5s or wall hit → DAZE
+ *   DAZE   → 0.5s recovery, fully vulnerable → AMBUSH
+ *   SPLIT  → first hit: red tint telegraph (0.6s), spawn 2 children
  *
  * Children (ShadowFragmentChild):
- *   - hp=1, scale 0.6, 1.5x speed, contactDamage=2
- *   - No further splitting, 8-second lifetime → fade out
+ *   - Use old patrol/chase AI, 8-second lifetime
+ *   - hp=3, scale 0.8, contactDamage=5
  *
- * Narrative: A fragment of doubt. It scatters when confronted,
- *            but always reforms somewhere else.
+ * Narrative: A fragment of doubt. It hides in the dark and lunges
+ *            when you least expect it — like a thought you tried to bury.
  */
 class ShadowFragment extends Enemy {
     constructor(scene, x, y, isChild = false) {
         super(scene, x, y, {
             textureKey: 'enemy_shadow',
             hp: isChild ? 3 : 12,
-            contactDamage: isChild ? 2 : 3,
+            contactDamage: 1,
             feelingsDrop: isChild ? 1 : 2,
             bodyWidth: 22,
             bodyHeight: 26,
+            leashDistance: 200,
+            returnSpeed: 60,
         });
 
         this.sprite.setScale(isChild ? 0.8 : 1.35);
         this.sprite.setOrigin(0.5, 0.5);
 
-        this.patrolSpeed = isChild ? 60 : 40;
-        this.chaseSpeed = isChild ? 97.5 : 65;
-        this.patrolDir = Math.random() < 0.5 ? 1 : -1;
-        this.state = 'patrol';
-        this._hasSplit = false;
         this._isChild = isChild;
         this._splitGfx = []; // temporary graphics to clean up
+        this._hasSplit = false;
+        this._alertTimer = 0;
+        this._rushTimer = 0;
+        this._dazeTimer = 0;
+
+        if (isChild) {
+            this.patrolSpeed = 60;
+            this.chaseSpeed = 97.5;
+            this.patrolDir = Math.random() < 0.5 ? 1 : -1;
+            this.state = 'patrol';
+            this.sprite.setAlpha(1);
+        } else {
+            this.ambushSpeed = 130; // 2x charge speed
+            this.state = 'ambush';
+            this.sprite.setAlpha(0.3);
+        }
 
         // Child lifetime countdown (seconds)
         this._childLifetime = isChild ? 8 : 0;
         this._childFading = false;
+
+        // Split telegraph handle (cancellable)
+        this._splitDelayedCall = null;
 
         // Clean up temporary graphics when sprite is destroyed
         // (room transition, game over, etc.)
@@ -107,7 +123,7 @@ class ShadowFragment extends Enemy {
         });
 
         // ── Spawn children after 0.6s ──
-        this.scene.time.delayedCall(600, () => {
+        this._splitDelayedCall = this.scene.time.delayedCall(600, () => {
             // Guard: if enemy was killed during telegraph, or scene changed
             if (this.dead || !this.sprite || !this.sprite.active) return;
             this._doSplit();
@@ -179,44 +195,123 @@ class ShadowFragment extends Enemy {
     /* ================================================================== */
 
     _updateAI(dt, playerX, playerY) {
-        // Child: count down lifetime (frame-based, pause-safe)
-        if (this._isChild && !this._childFading) {
-            this._childLifetime -= dt / 1000;
-            if (this._childLifetime <= 0) {
-                this._startFadeOut();
-                return;
+        // Child: patrol/chase with lifetime (same as before)
+        if (this._isChild) {
+            if (!this._childFading) {
+                this._childLifetime -= dt / 1000;
+                if (this._childLifetime <= 0) {
+                    this._startFadeOut();
+                    return;
+                }
             }
+            switch (this.state) {
+                case 'patrol':
+                    this.body.setVelocityX(this.patrolDir * this.patrolSpeed);
+                    if (this.body.blocked.left) this.patrolDir = 1;
+                    if (this.body.blocked.right) this.patrolDir = -1;
+                    if (Math.abs(playerX - this.x) < 150) this.state = 'chase';
+                    break;
+                case 'chase':
+                    this.body.setVelocityX(Math.sign(playerX - this.x) * this.chaseSpeed);
+                    if (Math.abs(playerX - this.x) > 200) {
+                        this.state = 'patrol';
+                    } else if (this.body.blocked.left) {
+                        this.patrolDir = 1;
+                        this.state = 'patrol';
+                    } else if (this.body.blocked.right) {
+                        this.patrolDir = -1;
+                        this.state = 'patrol';
+                    }
+                    break;
+            }
+            this.sprite.setFlipX(this.body.velocity.x > 0);
+            return;
         }
 
-        // Frozen during split telegraph
+        // ────────── Parent: ambush → alert → rush → daze ──────────
+
         if (this.state === 'split') return;
 
         const dist = playerX - this.x;
         const absDist = Math.abs(dist);
 
         switch (this.state) {
-            case 'patrol':
-                this.body.setVelocityX(this.patrolDir * this.patrolSpeed);
-                if (this.body.blocked.left) this.patrolDir = 1;
-                if (this.body.blocked.right) this.patrolDir = -1;
-                if (absDist < 150) this.state = 'chase';
+            case 'ambush':
+                this.body.setVelocity(0, 0);
+                if (absDist < 120) {
+                    this.state = 'alert';
+                    this._alertTimer = 300; // 0.3s
+                    this.sprite.setAlpha(1);
+                    this.sprite.setTint(0xff6666);
+                }
                 break;
 
-            case 'chase':
-                this.body.setVelocityX(Math.sign(dist) * this.chaseSpeed);
-                if (absDist > 200) {
-                    this.state = 'patrol';
-                } else if (this.body.blocked.left) {
-                    this.patrolDir = 1;
-                    this.state = 'patrol';
-                } else if (this.body.blocked.right) {
-                    this.patrolDir = -1;
-                    this.state = 'patrol';
+            case 'alert':
+                this.body.setVelocity(0, 0);
+                this._alertTimer -= dt;
+                if (this._alertTimer <= 0) {
+                    this.state = 'rush';
+                    this._rushTimer = 500; // 0.5s max charge
+                    this.sprite.clearTint();
+                    this.body.setVelocityX(Math.sign(dist) * this.ambushSpeed);
+                }
+                break;
+
+            case 'rush':
+                this._rushTimer -= dt;
+                if (this._rushTimer <= 0 || this.body.blocked.left || this.body.blocked.right) {
+                    this.state = 'daze';
+                    this._dazeTimer = 500; // 0.5s recovery
+                    this.body.setVelocity(0, 0);
+                    this.sprite.setAlpha(0.6);
+                }
+                break;
+
+            case 'daze':
+                this.body.setVelocity(0, 0);
+                this._dazeTimer -= dt;
+                if (this._dazeTimer <= 0) {
+                    this.state = 'ambush';
+                    this.sprite.setAlpha(0.3);
+                    this.sprite.clearTint();
                 }
                 break;
         }
 
         this.sprite.setFlipX(this.body.velocity.x > 0);
+    }
+
+    /* ================================================================== */
+    /*  Leash Hooks                                                          */
+    /* ================================================================== */
+
+    _onStartReturn() {
+        // Cancel split telegraph
+        if (this._splitDelayedCall) {
+            this._splitDelayedCall.remove();
+            this._splitDelayedCall = null;
+        }
+        // Kill any split-related tweens on the sprite
+        this.scene.tweens.killTweensOf(this.sprite);
+        // Reset visual state
+        this.sprite.setScale(1.35);
+        this.sprite.setAlpha(1);
+        this.sprite.clearTint();
+        this._cleanupSplitGfx();
+    }
+
+    _onReachedHome() {
+        if (this._isChild) return;
+        // Reset to ambush
+        this.state = 'ambush';
+        this._hasSplit = false;
+        this._alertTimer = 0;
+        this._rushTimer = 0;
+        this._dazeTimer = 0;
+        this.sprite.setScale(1.35);
+        this.sprite.setAlpha(0.3);
+        this.sprite.clearTint();
+        this.body.setVelocity(0, 0);
     }
 
     /* ================================================================== */

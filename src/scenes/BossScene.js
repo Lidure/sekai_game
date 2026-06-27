@@ -4,7 +4,7 @@ class BossScene extends Phaser.Scene {
     }
 
     init(data) {
-        this.playerData = data || { hp: 100, maxHp: 100, feelings: 0, feelingsMax: 100 };
+        this.playerData = data.playerData || { hp: 5, maxHp: 5, feelings: 0, feelingsMax: 100 };
     }
 
     create() {
@@ -36,11 +36,11 @@ class BossScene extends Phaser.Scene {
         this.pauseMenu = new PauseMenu(this);
 
         // Audio — start boss Phase 1 BGM
-        this.bgmPhase1 = this.sound.add('bgm_boss_p1', { loop: true, volume: 0 });
+        this.bgmPhase1 = AudioSettings.createBgm(this, 'bgm_boss_p1', 0.40);
         this.bgmPhase1.play();
         this.tweens.add({
             targets: this.bgmPhase1,
-            volume: 0.40,
+            volume: AudioSettings.scale('bgm', 0.40),
             duration: 1000,
         });
         this.bgmPhase2 = null; // Created on phase transition
@@ -89,8 +89,8 @@ class BossScene extends Phaser.Scene {
 
     _createPlayer() {
         this.player = new Player(this, 200, 480);
-        this.player.hp = this.playerData.hp || 100;
-        this.player.maxHp = this.playerData.maxHp || 100;
+        this.player.maxHp = Phaser.Math.Clamp(this.playerData.maxHp ?? 5, 1, 9);
+        this.player.hp = Phaser.Math.Clamp(this.playerData.hp ?? this.player.maxHp, 1, this.player.maxHp);
         this.player.feelings = this.playerData.feelings || 0;
         this.player.feelingsMax = this.playerData.feelingsMax || 100;
         if (this.playerData.abilities) {
@@ -240,13 +240,13 @@ class BossScene extends Phaser.Scene {
     _onBossTouchPlayer() {
         if (!this.boss || this.boss.defeated || this.boss.transitioning) return;
         if (this.boss.state === 'melee_active' || this.boss.state === 'dash_active' || this.boss.state === 'liberation_active') {
-            let dmg = 12;
-            if (this.boss.state === 'dash_active') dmg = 15;
-            if (this.boss.state === 'liberation_active') dmg = 20;
+            let dmg = 1;
+            if (this.boss.state === 'dash_active') dmg = 1;
+            if (this.boss.state === 'liberation_active') dmg = 2;
             this.player.takeDamage(dmg, 80, -40);
             return;
         }
-        this.player.takeDamage(5, 60, -30);
+        this.player.takeDamage(1, 60, -30);
     }
 
     update(time, delta) {

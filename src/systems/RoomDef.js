@@ -90,6 +90,8 @@ class RoomDef {
         ['mid', 'shaft'],
         ['mid', 'preboss'],
         ['preboss', 'boss'],
+        ['secret', 'shaft'],    // shortcut
+        ['shaft', 'ascent'],    // shortcut
     ];
 
     /** Get all rooms adjacent to a given room. */

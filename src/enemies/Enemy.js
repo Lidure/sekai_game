@@ -36,6 +36,13 @@ class Enemy {
         this.contactDamage = config.contactDamage || 5;
         this.feelingsDrop = config.feelingsDrop || 0;
 
+        // ── Anchor / Leash ──
+        this.spawnX = x;
+        this.spawnY = y;
+        this.isReturning = false;
+        this.leashDistance = config.leashDistance || 200;
+        this.returnSpeed = config.returnSpeed || 80;
+
         // Sprite
         this.sprite = scene.physics.add.sprite(x, y, config.textureKey);
         this.sprite.setCollideWorldBounds(true);
@@ -66,9 +73,22 @@ class Enemy {
         if (this.dead) return;
         if (this.invulnTimer > 0) this.invulnTimer--;
 
-        // Hitstun: enemy freezes (no AI) while knockback velocity still slides them
+        // Hitstun: enemy freezes (no AI) while knockback slides them
         if (this.hitstun > 0) {
             this.hitstun--;
+            return;
+        }
+
+        // ── Return-to-spawn (leash) ──
+        if (this.isReturning) {
+            this._updateReturnHome();
+            return;
+        }
+
+        const dx = this.x - this.spawnX;
+        const dy = this.y - this.spawnY;
+        if (dx * dx + dy * dy > this.leashDistance * this.leashDistance) {
+            this._startReturnHome();
             return;
         }
 
@@ -81,6 +101,74 @@ class Enemy {
      */
     _updateAI(delta, playerX, playerY) {
         // no-op in base
+    }
+
+    /* ================================================================== */
+    /*  Leash / Return-to-Spawn                                              */
+    /* ================================================================== */
+
+    /**
+     * Called by update() when the enemy is too far from spawn.
+     * Override in subclass to cancel telegraphs / clean up temporary state.
+     * @protected
+     */
+    _startReturnHome() {
+        this.isReturning = true;
+        this.body.setVelocity(0, 0);
+        this._onStartReturn();
+    }
+
+    /**
+     * Moves the enemy back toward its spawn position every frame while returning.
+     * Flying enemies move on both axes; grounded enemies move only on X (gravity handles Y).
+     */
+    _updateReturnHome() {
+        const dx = this.spawnX - this.x;
+        if (Math.abs(dx) < 8) {
+            // Reached home
+            this.body.setVelocityX(0);
+            const dy = this.spawnY - this.y;
+            if (this.body.allowGravity === false && Math.abs(dy) > 8) {
+                // Still need to descend
+                this.body.setVelocityY(Math.sign(dy) * this.returnSpeed);
+                return;
+            }
+            if (this.body.allowGravity === false) {
+                this.body.setVelocityY(0);
+            }
+            this.isReturning = false;
+            this._onReachedHome();
+            return;
+        }
+
+        this.body.setVelocityX(Math.sign(dx) * this.returnSpeed);
+
+        if (this.body.allowGravity === false) {
+            const dy = this.spawnY - this.y;
+            this.body.setVelocityY(Math.sign(dy) * this.returnSpeed);
+        }
+
+        if (this.sprite) {
+            this.sprite.setFlipX(this.body.velocity.x > 0);
+        }
+    }
+
+    /**
+     * Hook called when return-to-spawn begins.
+     * Cancel telegraphs, kill delayed calls, clean up temp VFX.
+     * @protected
+     */
+    _onStartReturn() {
+        // Override in subclass
+    }
+
+    /**
+     * Hook called when the enemy has arrived back at its spawn position.
+     * Reset state machine to default (patrol / hover).
+     * @protected
+     */
+    _onReachedHome() {
+        // Override in subclass
     }
 
     /**

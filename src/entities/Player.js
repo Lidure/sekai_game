@@ -42,8 +42,8 @@ class Player {
         this.isGroundedStable = false;
         this.isAirborneStable = false;
         this.facingRight = true;
-        this.hp = 50;
-        this.maxHp = 50;
+        this.hp = 5;
+        this.maxHp = 5;
         this.feelings = 0;
         this.feelingsMax = 100;
         this.jumpCount = 0;
@@ -182,6 +182,8 @@ class Player {
         this.state = 'dead';
         this.sprite.setVelocity(0, 0);
         this.sprite.body.setAllowGravity(false);
+        this.body.setAcceleration(0, 0);
+        this.body.setDragX(this.moveConfig.groundDrag);
         this.scene.sound.play('sfx_player_death', { volume: 0.8 });
 
         const scene = this.scene;
@@ -844,6 +846,7 @@ class Player {
                 if (this.sprite.anims && this.sprite.anims.isPlaying) {
                     this.sprite.anims.stop();
                 }
+                this.sprite.body.setAllowGravity(true);
                 this._setTextureStable('player_down');
                 break;
             case 'dead':
@@ -858,12 +861,11 @@ class Player {
     _updateHitbox(attackNum) {
         const dir = this.facingRight ? 1 : -1;
         const bw = this.body.width;
-        const gap = 2;
-        let w, h, oy;
+        let w, h, oy, gap;
         if (attackNum === 1) {
-            w = 18; h = 16; oy = 11;
+            w = 20; h = 16; oy = 8; gap = 3;
         } else {
-            w = 24; h = 19; oy = 10;
+            w = 26; h = 18; oy = 6; gap = 4;
         }
         this.slashHitbox.body.setSize(w, h);
         if (dir > 0) {
@@ -876,13 +878,152 @@ class Player {
 
     _updateAirHitbox() {
         const bw = this.body.width;
-        this.slashHitbox.body.setSize(bw - 6, 22);
-        this.slashHitbox.body.x = this.body.x + 2;
-        this.slashHitbox.body.y = this.body.y + Math.floor(this.body.height * 0.55);
+        this.slashHitbox.body.setSize(bw + 4, 28);
+        this.slashHitbox.body.x = this.body.x - 2;
+        this.slashHitbox.body.y = this.body.y + Math.floor(this.body.height * 0.5);
     }
 
     _disableHitbox() {
         this.slashHitbox.body.setSize(0, 0);
+    }
+
+    _spawnSlashArc(attackNum) {
+        if (!this.scene) return;
+        const dir = this.facingRight ? 1 : -1;
+        const hasSword = this.abilities.sword;
+        const isHeavy = attackNum === 2;
+
+        // Arc circle center = player's shoulder/waist pivot
+        const cx = this.x + dir * 4;
+        const cy = this.y - 2;
+        const radius = isHeavy ? 44 : 36;
+        const arcColor = hasSword ? 0x7FE0DE : 0xa8ccff;
+
+        // Sweep angles: arc on the forward side of the circle
+        // 0=right, PI/2=down, PI=left, -PI/2=up
+        let startAngle, endAngle;
+        if (dir > 0) {
+            startAngle = -1.0;  // up-right (above player)
+            endAngle = 0.8;     // down-right (below player)
+        } else {
+            startAngle = Math.PI - 0.8;  // up-left
+            endAngle = Math.PI + 1.0;    // down-left
+        }
+
+        // ── Outer glow (wide, dim, slow fade) ──
+        const gOuter = this.scene.add.graphics();
+        gOuter.lineStyle(isHeavy ? 4 : 3, arcColor, 0.25);
+        gOuter.beginPath();
+        gOuter.arc(cx, cy, radius, startAngle, endAngle, false, 32);
+        gOuter.strokePath();
+        gOuter.setDepth(15);
+        this.scene.tweens.add({
+            targets: gOuter,
+            alpha: 0,
+            duration: 120,
+            onComplete: () => gOuter.destroy(),
+        });
+
+        // ── Inner core (thin, bright white, fast fade) ──
+        const gInner = this.scene.add.graphics();
+        gInner.lineStyle(isHeavy ? 2 : 1.5, 0xffffff, 0.9);
+        gInner.beginPath();
+        gInner.arc(cx, cy, radius, startAngle, endAngle, false, 32);
+        gInner.strokePath();
+        gInner.setDepth(15);
+        this.scene.tweens.add({
+            targets: gInner,
+            alpha: 0,
+            duration: 70,
+            onComplete: () => gInner.destroy(),
+        });
+
+        // ── Midpoint flash ──
+        const midAngle = (startAngle + endAngle) / 2;
+        const flashX = cx + Math.cos(midAngle) * radius;
+        const flashY = cy + Math.sin(midAngle) * radius;
+        const flash = this.scene.add.circle(flashX, flashY, 3, 0xffffff, 0.8);
+        flash.setDepth(15);
+        this.scene.tweens.add({
+            targets: flash,
+            alpha: 0,
+            scale: isHeavy ? 4 : 3,
+            duration: 60,
+            onComplete: () => flash.destroy(),
+        });
+
+        // ── Endpoint sparks ──
+        for (const angle of [startAngle, endAngle]) {
+            const sx = cx + Math.cos(angle) * radius;
+            const sy = cy + Math.sin(angle) * radius;
+            const s = this.scene.add.circle(sx, sy, 1.5, 0xffffff, 0.5);
+            s.setDepth(15);
+            this.scene.tweens.add({
+                targets: s,
+                alpha: 0,
+                x: sx + Phaser.Math.Between(-3, 3),
+                y: sy + Phaser.Math.Between(-3, 3),
+                scale: 0.2,
+                duration: 100,
+                onComplete: () => s.destroy(),
+            });
+        }
+    }
+
+    _spawnAirSlash() {
+        if (!this.scene) return;
+        const hasSword = this.abilities.sword;
+        const color = hasSword ? 0x7FE0DE : 0xa8ccff;
+        const cx = this.x;
+        const cy = this.y + 10;
+
+        // ── Downward streak lines ──
+        const g = this.scene.add.graphics();
+        g.lineStyle(2, color, 0.3);
+        const streakLen = 24;
+        for (let s = -2; s <= 2; s++) {
+            const sx = cx + s * 4;
+            g.beginPath();
+            g.moveTo(sx, cy);
+            g.lineTo(sx + Phaser.Math.Between(-2, 2), cy + streakLen);
+            g.strokePath();
+        }
+        g.setDepth(15);
+        this.scene.tweens.add({
+            targets: g,
+            alpha: 0,
+            duration: 120,
+            onComplete: () => g.destroy(),
+        });
+
+        // Inner bright core
+        const gInner = this.scene.add.graphics();
+        gInner.lineStyle(1, 0xffffff, 0.7);
+        for (let s = -1; s <= 1; s++) {
+            const sx = cx + s * 4;
+            gInner.beginPath();
+            gInner.moveTo(sx, cy);
+            gInner.lineTo(sx, cy + streakLen * 0.7);
+            gInner.strokePath();
+        }
+        gInner.setDepth(15);
+        this.scene.tweens.add({
+            targets: gInner,
+            alpha: 0,
+            duration: 80,
+            onComplete: () => gInner.destroy(),
+        });
+
+        // ── Impact flash ──
+        const flash = this.scene.add.circle(cx, cy + 8, 3, 0xffffff, 0.7);
+        flash.setDepth(15);
+        this.scene.tweens.add({
+            targets: flash,
+            alpha: 0,
+            scale: 3,
+            duration: 60,
+            onComplete: () => flash.destroy(),
+        });
     }
 
     _spawnDoubleJumpVFX() {
@@ -936,8 +1077,12 @@ class Player {
      * @param {object} data - Shape matching saveState().
      */
     loadState(data) {
-        if (data.hp !== undefined) this.hp = Math.min(data.hp, this.maxHp);
-        if (data.maxHp !== undefined) this.maxHp = data.maxHp;
+        if (data.maxHp !== undefined) {
+            this.maxHp = Phaser.Math.Clamp(data.maxHp, 1, 9);
+        }
+        if (data.hp !== undefined) {
+            this.hp = Math.min(data.hp, this.maxHp);
+        }
         if (data.feelings !== undefined) this.feelings = data.feelings;
         if (data.feelingsMax !== undefined) this.feelingsMax = data.feelingsMax;
         if (data.abilities) {
@@ -949,6 +1094,7 @@ class Player {
     }
 
     reset(x, y, hp = this.maxHp) {
+        this.resetToIdle();
         // Preserve earned traversal abilities (they persist through death)
         const savedAbilities = { ...this.abilities };
         this.hp = hp;
@@ -956,12 +1102,8 @@ class Player {
         this.feelingsTimer = 3001;
         this.dead = false;
         this.jumpCount = 0;
-        this.state = 'idle';
         this.abilities = savedAbilities;
         this.dashUsedThisJump = false;
-        this.dashCooldownTimer = 0;
-        this.dashFrameTimer = 0;
-        this.dashFrameIndex = 0;
         this.offGroundFrames = 0;
         this.groundedFrames = 0;
         this.airborneFrames = 0;
@@ -970,15 +1112,26 @@ class Player {
         this.sprite.setAlpha(1);
         this.sprite.clearTint();
         this.sprite.setScale(0.85);
+        this.sprite.setActive(true);
+        this.sprite.body.setAllowGravity(true);
+        this.sprite.body.reset(x, y);
+        this.sprite.setPosition(x, y);
+    }
+
+    resetToIdle() {
+        this.state = 'idle';
+        this.body.setVelocity(0, 0);
+        this.body.setAcceleration(0, 0);
+        this.body.setDragX(this.moveConfig.groundDrag);
+        this.bufferAttack = -1;
+        this.jumpBufferTimer = 0;
+        this.coyoteTimer = 0;
+        this.dashCooldownTimer = 0;
+        this._disableHitbox();
         if (this.sprite.anims && this.sprite.anims.isPlaying) {
             this.sprite.anims.stop();
         }
         this._setTextureStable('player_idle');
-        this.sprite.body.setAllowGravity(true);
-        this.sprite.body.reset(x, y);
-        this.sprite.setPosition(x, y);
-        this.body.setVelocity(0, 0);
-        this._disableHitbox();
     }
 
     /**

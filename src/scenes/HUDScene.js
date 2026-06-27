@@ -4,15 +4,20 @@ class HUDScene extends Phaser.Scene {
     }
 
     create() {
-        this.pipSize = 16;
-        this.pipGap = 5;
-        this.pipX = 24;
-        this.pipY = 24;
+        this.hpPerMask = 1;
+        this.maskSize = 34;
+        this.maskGap = 5;
+        this.maskStartX = 24;
+        this.maskStartY = 18;
+        this.masksPerRow = 10;
 
-        this.heartContainers = [];
+        this.hpMasks = [];
         for (let i = 0; i < 20; i++) {
-            const g = this.add.graphics().setDepth(100);
-            this.heartContainers.push(g);
+            const icon = this.add.image(0, 0, 'ui_hp_mask')
+                .setOrigin(0, 0)
+                .setDepth(100)
+                .setDisplaySize(this.maskSize, this.maskSize);
+            this.hpMasks.push(icon);
         }
 
         this.bossName = this.add.text(0, 22, '', {
@@ -42,6 +47,28 @@ class HUDScene extends Phaser.Scene {
         this.comboTween = null;
         this.scaleTween = null;
 
+        this.npcDialogBg = this.add.graphics().setDepth(1000).setAlpha(0);
+        this.npcDialogName = this.add.text(0, 0, '', {
+            fontSize: '18px',
+            fontFamily: 'monospace',
+            color: '#7FE0DE',
+        }).setDepth(1001).setAlpha(0);
+        this.npcDialogText = this.add.text(0, 0, '', {
+            fontSize: '16px',
+            fontFamily: 'monospace',
+            color: '#c8d8ff',
+            wordWrap: { width: 520 },
+        }).setDepth(1001).setAlpha(0);
+        this.npcDialogIndicator = this.add.text(0, 0, '', {
+            fontSize: '14px',
+            fontFamily: 'monospace',
+            color: '#7FE0DE',
+        }).setOrigin(1, 1).setDepth(1001).setAlpha(0);
+        this._npcDialogVisible = false;
+        this._npcDialogName = '';
+        this._npcDialogText = '';
+        this._npcDialogIndicatorText = '';
+
         this.abilityGraphics = [];
         for (let i = 0; i < 4; i++) {
             const g = this.add.graphics().setDepth(100);
@@ -50,6 +77,37 @@ class HUDScene extends Phaser.Scene {
         this._lastAbilityState = null;
 
         this._layout();
+
+        this.isReady = true;
+        this.scale.on('resize', this._layout, this);
+    }
+
+    showNpcDialogue(name, text, indicator = '') {
+        this._npcDialogVisible = true;
+        this._npcDialogName = name || '';
+        this._npcDialogText = text || '';
+        this._npcDialogIndicatorText = indicator || '';
+        this._layoutNpcDialogue();
+        this.npcDialogBg.setAlpha(1);
+        this.npcDialogName.setAlpha(1);
+        this.npcDialogText.setAlpha(1);
+        this.npcDialogIndicator.setAlpha(1);
+    }
+
+    updateNpcDialogue(name, text, indicator = '') {
+        this._npcDialogName = name || '';
+        this._npcDialogText = text || '';
+        this._npcDialogIndicatorText = indicator || '';
+        if (!this._npcDialogVisible) return;
+        this._layoutNpcDialogue();
+    }
+
+    hideNpcDialogue() {
+        this._npcDialogVisible = false;
+        this.npcDialogBg.setAlpha(0);
+        this.npcDialogName.setAlpha(0);
+        this.npcDialogText.setAlpha(0);
+        this.npcDialogIndicator.setAlpha(0);
     }
 
     _layout() {
@@ -62,59 +120,103 @@ class HUDScene extends Phaser.Scene {
         this.feelBg.setPosition(0, 0);
         this.feelFill.setPosition(0, 0);
         this.comboText.setPosition(w / 2 + 100, h / 2 - 50);
+        this._layoutNpcDialogue();
+        this._layoutHpIcons();
+    }
+
+    _layoutHpIcons() {
+        for (let i = 0; i < this.hpMasks.length; i++) {
+            const icon = this.hpMasks[i];
+            const row = Math.floor(i / this.masksPerRow);
+            const col = i % this.masksPerRow;
+            icon.setDisplaySize(this.maskSize, this.maskSize);
+            icon.setPosition(
+                this.maskStartX + col * (this.maskSize + this.maskGap),
+                this.maskStartY + row * (this.maskSize + 3)
+            );
+            icon.setTint(0xffffff);
+            icon.setAlpha(1);
+        }
+    }
+
+    _layoutNpcDialogue() {
+        if (!this.npcDialogBg) return;
+
+        const w = this.scale.width;
+        const h = this.scale.height;
+        const boxW = Math.min(620, w - 48);
+        const boxH = 118;
+        const boxX = (w - boxW) / 2;
+        const boxY = h - boxH - 24;
+        const padX = 18;
+        const padTop = 12;
+        const padBottom = 12;
+
+        this.npcDialogBg.clear();
+        this.npcDialogBg.fillStyle(0x0a0a1a, 0.92);
+        this.npcDialogBg.fillRoundedRect(boxX, boxY, boxW, boxH, 6);
+        this.npcDialogBg.lineStyle(1, 0x2ec4b6, 0.55);
+        this.npcDialogBg.strokeRoundedRect(boxX, boxY, boxW, boxH, 6);
+
+        this.npcDialogName.setText(this._npcDialogName);
+        this.npcDialogText.setText(this._npcDialogText);
+        this.npcDialogIndicator.setText(this._npcDialogIndicatorText);
+
+        this.npcDialogName.setPosition(boxX + padX, boxY + padTop);
+        this.npcDialogText.setPosition(boxX + padX, boxY + padTop + 28);
+        this.npcDialogText.setWordWrapWidth(boxW - padX * 2);
+        this.npcDialogIndicator.setPosition(boxX + boxW - padX, boxY + boxH - padBottom);
     }
 
     drawPips(hp, maxHp) {
-        if (maxHp === undefined) maxHp = 100;
-        const pipCount = Math.ceil(maxHp / 10);
-        while (this.heartContainers.length < pipCount) {
-            const g = this.add.graphics().setDepth(100);
-            this.heartContainers.push(g);
+        if (maxHp === undefined) maxHp = 5;
+        const pipCount = Math.ceil(maxHp / this.hpPerMask);
+        while (this.hpMasks.length < pipCount) {
+            const icon = this.add.image(0, 0, 'ui_hp_mask')
+                .setOrigin(0, 0)
+                .setDepth(100)
+                .setDisplaySize(this.maskSize, this.maskSize);
+            this.hpMasks.push(icon);
         }
-        for (let i = 0; i < this.heartContainers.length; i++) {
-            const g = this.heartContainers[i];
-            g.clear();
+        for (let i = 0; i < this.hpMasks.length; i++) {
+            const icon = this.hpMasks[i];
             if (i >= pipCount) {
-                g.setVisible(false);
+                icon.setVisible(false);
                 continue;
             }
-            g.setVisible(true);
-            const pipHp = 10;
-            const remaining = hp - i * pipHp;
-            const x = this.pipX + i * (this.pipSize + this.pipGap);
-            const y = this.pipY;
+            icon.setVisible(true);
+            icon.setDisplaySize(this.maskSize, this.maskSize);
+            const remaining = Phaser.Math.Clamp(hp - i * this.hpPerMask, 0, this.hpPerMask);
+            const ratio = remaining / this.hpPerMask;
+            const row = Math.floor(i / this.masksPerRow);
+            const col = i % this.masksPerRow;
+            icon.setPosition(
+                this.maskStartX + col * (this.maskSize + this.maskGap),
+                this.maskStartY + row * (this.maskSize + 3)
+            );
 
-            if (remaining >= pipHp) {
-                g.fillStyle(0xffffff, 1);
-                this._drawHeart(g, x, y);
-            } else if (remaining > 0) {
-                g.fillStyle(0xffffff, 0.4);
-                this._drawHeart(g, x, y);
-                g.fillStyle(0x1a1a2e, 1);
-                const halfH = this.pipSize * (1 - remaining / pipHp);
-                g.fillRect(x, y + this.pipSize - halfH, this.pipSize, halfH);
+            if (ratio >= 1) {
+                icon.setAlpha(1);
+                icon.clearTint();
+                icon.setBlendMode(Phaser.BlendModes.ADD);
+                icon.setTint(0xffffff);
+            } else if (ratio > 0) {
+                icon.setAlpha(0.45 + ratio * 0.55);
+                icon.setTint(0xbfe9ff);
+                icon.setBlendMode(Phaser.BlendModes.ADD);
             } else {
-                g.fillStyle(0x1a1a2e, 1);
-                this._drawHeart(g, x, y);
-                g.lineStyle(1, 0x333355, 0.5);
-                this._drawHeartOutline(g, x, y);
+                icon.setAlpha(0.16);
+                icon.setTint(0x556177);
+                icon.setBlendMode(Phaser.BlendModes.NORMAL);
             }
         }
     }
 
-    _drawHeart(g, x, y) {
-        const s = this.pipSize;
-        g.fillRect(x + 2, y + 4, s - 4, s - 6);
-        g.fillRect(x + 1, y + 5, s - 2, s - 8);
-        g.fillRect(x + 0, y + 6, s, s - 10);
-        g.fillRect(x + 3, y + 3, 3, 2);
-        g.fillRect(x + s - 6, y + 3, 3, 2);
-    }
-
-    _drawHeartOutline(g, x, y) {
-        const s = this.pipSize;
-        g.strokeRect(x + 2, y + 4, s - 4, s - 6);
-        g.strokeRect(x + 1, y + 5, s - 2, s - 8);
+    refreshFromPlayer(player) {
+        if (!player) return;
+        this.drawPips(player.hp, player.maxHp);
+        this.drawFeelings(player.feelings, player.feelingsMax);
+        this.drawAbilities(player.abilities);
     }
 
     showBossBar(name, hp, maxHp) {

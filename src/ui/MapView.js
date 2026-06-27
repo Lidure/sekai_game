@@ -274,11 +274,14 @@ class MapView {
 
             const active = this.roomState.get(idA)?.visited || this.roomState.get(idB)?.visited ||
                            this.roomState.get(idA)?.current || this.roomState.get(idB)?.current;
-            const color = active ? 0x7fe0de : 0x2b3552;
+            const isShortcut = (idA === 'secret' && idB === 'shaft') || (idA === 'shaft' && idB === 'ascent');
+            const color = isShortcut ? 0x55557a : (active ? 0x7fe0de : 0x2b3552);
+            const alpha = isShortcut ? 0.5 : (active ? 0.85 : 0.42);
+            const lineW = isShortcut ? 1.5 : (active ? 3 : 2);
             const sx = source.cx, sy = source.cy;
             const dx = dest.cx, dy = dest.cy;
             const midX = sx + (dx - sx) * 0.5;
-            this.connectionGfx.lineStyle(active ? 3 : 2, color, active ? 0.85 : 0.42);
+            this.connectionGfx.lineStyle(lineW, color, alpha);
             this.connectionGfx.beginPath();
             this.connectionGfx.moveTo(sx, sy);
             this.connectionGfx.lineTo(midX, sy);

@@ -41,6 +41,7 @@ class SaveSlotPicker {
         const cx = W / 2;
 
         this._panelRect = { px, py, pW, pH };
+        this._heartSize = 22;
 
         const dim = this.scene.add.graphics();
         dim.fillStyle(0x000000, 0.65);
@@ -59,7 +60,7 @@ class SaveSlotPicker {
         panel.strokeRoundedRect(px, py, pW, pH, 12);
         this.container.add(panel);
 
-        const titleStr = this.mode === 'save' ? '\u25C6 SAVE GAME \u25C6' : '\u25C6 LOAD GAME \u25C6';
+        const titleStr = this.mode === 'save' ? Lang.t('saveGame') : Lang.t('loadGameTitle');
         this._titleText = this.scene.add.text(cx, py + 28, titleStr, {
             fontSize: '22px', fontFamily: 'monospace', color: '#7FE0DE',
         }).setOrigin(0.5);
@@ -72,7 +73,7 @@ class SaveSlotPicker {
 
         this._slotItems = [];
         const cardStartY = py + 66;
-        const cardGap = 52;
+        const cardGap = 56;
 
         for (let i = 0; i < 5; i++) {
             const y = cardStartY + i * cardGap;
@@ -95,12 +96,14 @@ class SaveSlotPicker {
             }).setOrigin(0, 0.5);
             this.container.add(infoText);
 
-            const subText = this.scene.add.text(px + 62, y + 12, '', {
+            const hpIcons = [];
+
+            const timeText = this.scene.add.text(px + 62, y + 12, '', {
                 fontSize: '11px', fontFamily: 'monospace', color: '#5a7a9f',
             }).setOrigin(0, 0.5);
-            this.container.add(subText);
+            this.container.add(timeText);
 
-            this._slotItems.push({ glow, numText, infoText, subText, y });
+            this._slotItems.push({ glow, numText, infoText, hpIcons, timeText, y });
         }
 
         this._helpText = this.scene.add.text(cx, py + pH - 16, '', {
@@ -117,13 +120,19 @@ class SaveSlotPicker {
                 if (raw) {
                     const data = JSON.parse(raw);
                     const roomDef = RoomDef.get(data.roomId);
+                    const rawHp = Number.isFinite(data.hp) ? data.hp : 0;
+                    const rawMaxHp = Number.isFinite(data.maxHp)
+                        ? data.maxHp
+                        : Math.max(1, rawHp || 1);
+                    const clampedHp = Phaser.Math.Clamp(rawHp, 0, rawMaxHp);
                     this.slots.push({
                         index: i,
                         empty: false,
-                        roomName: roomDef ? roomDef.name : '???',
-                        hp: data.hp || 0,
-                        maxHp: data.maxHp || 10,
+                        roomName: roomDef ? Lang.roomName(data.roomId) : '???',
+                        hp: clampedHp,
+                        maxHp: rawMaxHp,
                         timestamp: data.timestamp || 0,
+                        version: data.version || 1,
                     });
                 } else {
                     this.slots.push({ index: i, empty: true, roomName: null, hp: 0, maxHp: 0, timestamp: 0 });
@@ -136,6 +145,8 @@ class SaveSlotPicker {
 
     _updateDisplay() {
         const { px, pW } = this._panelRect;
+        const heartSize = this._heartSize;
+        const heartGap = 4;
 
         this._slotItems.forEach((item, i) => {
             const slot = this.slots[i];
@@ -152,28 +163,73 @@ class SaveSlotPicker {
             }
 
             if (slot.empty) {
-                item.infoText.setText('EMPTY SLOT');
+                item.infoText.setText(Lang.t('emptySlot'));
                 item.infoText.setColor(isDisabled ? '#3a4a6a' : '#5a7a9f');
-                item.subText.setText('');
+                item.timeText.setText('');
+                item.timeText.setPosition(px + 62, item.y + 12);
                 item.numText.setColor(isDisabled ? '#1a2a3a' : '#2EC4B6');
+                this._setHpIconsVisible(item, false);
             } else {
                 item.infoText.setText(slot.roomName);
                 item.infoText.setColor(isSelected ? '#ffffff' : '#c8d8ff');
-                const hpStr = SaveSlotPicker._hpBar(slot.hp, slot.maxHp);
-                const timeStr = SaveSlotPicker._formatTime(slot.timestamp);
-                item.subText.setText(`HP: ${hpStr}    ${timeStr}`);
-                item.subText.setColor('#5a7a9f');
                 item.numText.setColor('#FF87A0');
+
+                const timeStr = SaveSlotPicker._formatTime(slot.timestamp);
+                item.timeText.setText(timeStr);
+                item.timeText.setColor('#5a7a9f');
+
+                const pipCount = Math.max(1, Math.ceil(slot.maxHp / 1));
+                const heartsW = pipCount * (heartSize + heartGap) - heartGap;
+                item.timeText.setPosition(px + 62 + heartsW + 12, item.y + 12);
+
+                this._setHpIconsVisible(item, false);
+                for (let p = 0; p < pipCount; p++) {
+                    const hx = px + 62 + p * (heartSize + heartGap);
+                    const hy = item.y + 12 - heartSize / 2;
+                    const remaining = Phaser.Math.Clamp(slot.hp - p, 0, 1);
+                    const icon = this._ensureHpIcon(item, p);
+                    icon.setVisible(true);
+                    icon.setPosition(hx, hy);
+                    icon.setDisplaySize(heartSize, heartSize);
+
+                    if (remaining >= 1) {
+                        icon.setAlpha(1);
+                        icon.setTint(0xffffff);
+                        icon.setBlendMode(Phaser.BlendModes.ADD);
+                    } else if (remaining > 0) {
+                        icon.setAlpha(0.55);
+                        icon.setTint(0xbfe9ff);
+                        icon.setBlendMode(Phaser.BlendModes.ADD);
+                    } else {
+                        icon.setAlpha(0.18);
+                        icon.setTint(0x596b88);
+                        icon.setBlendMode(Phaser.BlendModes.NORMAL);
+                    }
+                }
             }
         });
 
-        this._helpText.setText('\u2191\u2193 Select   J/SPACE Confirm   ESC Cancel');
+        this._helpText.setText(Lang.t('helpSlot'));
     }
 
-    static _hpBar(hp, max) {
-        const f = '\u2588'.repeat(Math.min(hp, max));
-        const e = '\u2591'.repeat(Math.max(0, max - hp));
-        return f + e;
+    _ensureHpIcon(item, index) {
+        while (item.hpIcons.length <= index) {
+            const icon = this.scene.add.image(0, 0, 'ui_hp_mask')
+                .setOrigin(0, 0)
+                .setDepth(100)
+                .setAlpha(0);
+            this.container.add(icon);
+            item.hpIcons.push(icon);
+        }
+        return item.hpIcons[index];
+    }
+
+    _setHpIconsVisible(item, visible) {
+        if (!item.hpIcons) return;
+        for (const icon of item.hpIcons) {
+            icon.setVisible(visible);
+            if (!visible) icon.setAlpha(0);
+        }
     }
 
     static _formatTime(ts) {
@@ -218,6 +274,7 @@ class SaveSlotPicker {
         on('keydown-J', () => this._confirm());
         on('keydown-SPACE', () => this._confirm());
         on('keydown-ENTER', () => this._confirm());
+        on('keydown-K', () => { if (this.inputEnabled) this._cancel(); });
         on('keydown-ESC', () => { if (this.inputEnabled) this._cancel(); });
         on('keydown-P', () => { if (this.inputEnabled) this._cancel(); });
     }

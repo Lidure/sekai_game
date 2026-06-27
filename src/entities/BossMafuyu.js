@@ -116,11 +116,11 @@ class BossMafuyu {
         }
         scene.time.delayedCall(800, () => {
             if (!scene.bgmPhase2) {
-                scene.bgmPhase2 = scene.sound.add('bgm_boss_p2', { loop: true, volume: 0 });
+                scene.bgmPhase2 = AudioSettings.createBgm(scene, 'bgm_boss_p2', 0.45);
                 scene.bgmPhase2.play();
                 scene.tweens.add({
                     targets: scene.bgmPhase2,
-                    volume: 0.45,
+                    volume: AudioSettings.scale('bgm', 0.45),
                     duration: 1500,
                 });
             }

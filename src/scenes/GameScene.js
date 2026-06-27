@@ -100,6 +100,7 @@ class GameScene extends Phaser.Scene {
         this._spawnLockFrames = 0;
         this._cameraLookOffsetY = 0;
         this._cameraLookTargetOffsetY = 0;
+        this._pendingHudRefresh = false;
 
         // Persistent state (survives room transitions)
         this.bossActive = false;
@@ -111,6 +112,7 @@ class GameScene extends Phaser.Scene {
         this.abilityItemsCollected = [];
         this._bossTriggered = false;
         this._bossDefeated = false;
+        this._spawnedWallIds = [];
 
         // Room-scoped arrays (rebuilt per room)
         this.enemyInstances = [];
@@ -120,6 +122,7 @@ class GameScene extends Phaser.Scene {
         this.collectibleGroup = null;
         this.abilityItems = [];
         this.abilityGates = [];
+        this.destructibleWalls = [];
         this._oneWayDoorZones = [];
         this._oneWayDoorGraphics = [];
         this.bossTriggerZone = null;
@@ -131,6 +134,10 @@ class GameScene extends Phaser.Scene {
         this._vines = [];
         this._runeGlows = [];
         this._ambientLights = [];
+
+        // Locked room (arena) state
+        this._lockedRoom = null;
+        this._lockBarrierGraphics = null;
 
         // Room-specific graphics
         this.bgFar = null;
@@ -147,6 +154,8 @@ class GameScene extends Phaser.Scene {
         this._roomBanner = null;
         this._roomBannerTimer = null;
         this._platformLineGfx = null;
+        this._fgSilhouette = null;
+        this._dustEmitter = null;
         this.exitZones = [];
         this._exitMarkers = [];
 
@@ -192,12 +201,13 @@ class GameScene extends Phaser.Scene {
         if (result.victory) {
             this.player.heal(15);
             this.player.feelings = Math.min(this.player.feelingsMax, this.player.feelings + 20);
+            this.player.resetToIdle();
             this._bossDefeated = true;
         }
         if (result.playerDied) {
             this.player.feelings = 0;
             // Reset in current room at a safe position near the entrance
-            this.player.reset(48, 636, 50);
+            this.player.reset(48, 636, this.player.maxHp);
         }
         this.bossActive = false;
     }
@@ -223,7 +233,7 @@ class GameScene extends Phaser.Scene {
         // After 2 seconds, respawn player and restore world
         this.time.delayedCall(2000, () => {
             goText.destroy();
-            this.player.reset(144, 636, 50);
+            this.player.reset(144, 636, this.player.maxHp);
             this._resetEnemies();
             this._resetCollectibles();
             if (this.bgm) {
@@ -242,11 +252,11 @@ class GameScene extends Phaser.Scene {
     }
 
     _setupBGM() {
-        this.bgm = this.sound.add('bgm_explore', { loop: true, volume: 0 });
+        this.bgm = AudioSettings.createBgm(this, 'bgm_explore', 0.30);
         this.bgm.play();
         this.tweens.add({
             targets: this.bgm,
-            volume: 0.30,
+            volume: AudioSettings.scale('bgm', 0.30),
             duration: 1000,
         });
     }
@@ -284,6 +294,9 @@ class GameScene extends Phaser.Scene {
         this.physics.world.setBounds(0, 0, this._roomPixelWidth, this._roomPixelHeight);
         this.cameras.main.setBounds(0, 0, this._roomPixelWidth, this._roomPixelHeight);
 
+        // ── Camera profile (set zoom BEFORE any objects are created) ──
+        this._setupCameraForRoom(roomDef);
+
         // ── Room containers ──
         this.roomBgContainer = this.add.container(0, 0).setDepth(-20);
         this.roomContainer = this.add.container(0, 0).setDepth(0);
@@ -300,13 +313,19 @@ class GameScene extends Phaser.Scene {
         const pPlat = this.physics.add.collider(this.player.sprite, this._tilePlatforms);
         this._roomColliders.push(pGnd, pPlat);
 
-        // ── Thin platform visuals ──
-        this._drawPlatformVisuals();
+        // ── Foreground silhouette (HK-style black fill + bright outline) ──
+        this._drawForegroundSilhouette();
+
+        // ── Dust particles ──
+        this._createDustEmitter();
 
         // ── Enemies ──
         this.enemyGroup = this.physics.add.group();
         this.enemyInstances = [];
         this._buildEnemiesFromSpawns();
+
+        // ── Locked room (arena) setup ──
+        this._setupLockedRoom(roomDef);
 
         // ── NPCs ──
         this.npcs = [];
@@ -329,6 +348,14 @@ class GameScene extends Phaser.Scene {
         // ── One-way doors ──
         this._buildDoorsFromSpawns();
 
+        // ── Destructible walls ──
+        this.destructibleWalls = [];
+        this._buildDestructibleWallsFromSpawns();
+
+        // ── Moving platforms ──
+        this._movingPlatforms = [];
+        this._buildMovingPlatformsFromSpawns();
+
         // ── Boss trigger ──
         this._buildBossTriggerFromSpawns();
 
@@ -337,9 +364,6 @@ class GameScene extends Phaser.Scene {
 
         // ── Exit markers ──
         this._buildExitMarkers();
-
-        // ── Camera ──
-        this._setupCameraForRoom(roomDef);
 
         // ── Banner ──
         this._showRoomBanner(roomDef.name);
@@ -357,6 +381,8 @@ class GameScene extends Phaser.Scene {
         this._spawnAbilityItems = [];
         this._spawnGates = [];
         this._spawnDoors = [];
+        this._spawnDestructibleWalls = [];
+        this._spawnMovingPlatforms = [];
         this._spawnStalactites = [];
         this._spawnCrystals = [];
         this._spawnTorches = [];
@@ -416,6 +442,30 @@ class GameScene extends Phaser.Scene {
             for (const obj of doorLayer.objects) {
                 const p = this._tiledProps(obj);
                 this._spawnDoors.push({ x: obj.x, y: obj.y, w: obj.width, h: obj.height });
+            }
+        }
+
+        // DestructibleWalls layer
+        const wallLayer = map.getObjectLayer('DestructibleWalls');
+        if (wallLayer) {
+            for (const obj of wallLayer.objects) {
+                const p = this._tiledProps(obj);
+                this._spawnDestructibleWalls.push({
+                    x: obj.x, y: obj.y, w: obj.width, h: obj.height,
+                    wallId: p.wallId, maxHp: p.maxHp || 6,
+                });
+            }
+        }
+
+        // MovingPlatforms layer
+        const mpLayer = map.getObjectLayer('MovingPlatforms');
+        if (mpLayer) {
+            for (const obj of mpLayer.objects) {
+                const p = this._tiledProps(obj);
+                this._spawnMovingPlatforms.push({
+                    x: obj.x, y: obj.y, width: obj.width,
+                    rangeY: p.rangeY, speed: p.speed,
+                });
             }
         }
 
@@ -511,6 +561,18 @@ class GameScene extends Phaser.Scene {
             this._oneWayDoorGraphics = [];
         }
 
+        // Destroy destructible walls
+        if (this.destructibleWalls) {
+            this.destructibleWalls.forEach(w => w.destroy());
+            this.destructibleWalls = [];
+        }
+
+        // Destroy moving platforms
+        if (this._movingPlatforms) {
+            this._movingPlatforms.forEach(mp => mp.destroy());
+            this._movingPlatforms = [];
+        }
+
         // Destroy boss trigger zone
         if (this.bossTriggerZone) {
             this.bossTriggerZone.destroy();
@@ -527,17 +589,23 @@ class GameScene extends Phaser.Scene {
         if (this._exitMarkers) { this._exitMarkers.forEach(m => m.destroy()); this._exitMarkers = []; }
 
         // Destroy background elements
-        if (this.bgFar) { this.bgFar.destroy(); this.bgFar = null; }
-        if (this.bgMid) { this.bgMid.destroy(); this.bgMid = null; }
-        if (this.bgNear) { this.bgNear.destroy(); this.bgNear = null; }
-        if (this.bgWash) { this.bgWash.destroy(); this.bgWash = null; }
         if (this.bgTint) { this.bgTint.destroy(); this.bgTint = null; }
         if (this._roomBoundaryGfx) { this._roomBoundaryGfx.destroy(); this._roomBoundaryGfx = null; }
-        if (this._platformLineGfx) { this._platformLineGfx.destroy(); this._platformLineGfx = null; }
+        if (this._fgSilhouette) { this._fgSilhouette.destroy(); this._fgSilhouette = null; }
+
+        // Destroy dust emitter
+        if (this._dustEmitter) { this._dustEmitter.destroy(); this._dustEmitter = null; }
 
         // Destroy containers
         if (this.roomContainer) { this.roomContainer.destroy(true); this.roomContainer = null; }
         if (this.roomBgContainer) { this.roomBgContainer.destroy(true); this.roomBgContainer = null; }
+
+        // Destroy lock barrier
+        if (this._lockBarrierGraphics) {
+            this.tweens.killTweensOf(this._lockBarrierGraphics);
+            this._lockBarrierGraphics.destroy();
+            this._lockBarrierGraphics = null;
+        }
 
         // Destroy room banner
         if (this._roomBanner) {
@@ -589,11 +657,13 @@ class GameScene extends Phaser.Scene {
             // Build new room
             this._buildRoom(roomDef);
 
-            const entranceY = this._getRoomEntranceY(roomDef, spawnY, fromDir);
+            const entry = this._getRoomEntryPoint(roomDef, spawnX, spawnY, fromDir);
 
             // Position player
-            this.player.teleport(spawnX, entranceY);
-            this._spawnLockFrames = 4;
+            this.player.teleport(entry.x, entry.y);
+            this.player.facingRight = fromDir !== 'left';
+            this.player.sprite.setFlipX(!this.player.facingRight);
+            this._spawnLockFrames = fromDir === 'up' || fromDir === 'down' ? 8 : 6;
 
             // Quick return from black
             this.cameras.main.fadeIn(80, 0, 0, 0);
@@ -608,12 +678,36 @@ class GameScene extends Phaser.Scene {
      * This avoids relying on hand-authored targetY values, which can drift
      * below the collider after scaling or body reset.
      */
-    _getRoomEntranceY(roomDef, spawnY, fromDir) {
-        if (!roomDef || !this.player || !this.player.sprite) return spawnY;
-        if (fromDir !== 'left' && fromDir !== 'right') return spawnY;
+    _getRoomEntryPoint(roomDef, spawnX, spawnY, fromDir) {
+        if (!roomDef || !this.player || !this.player.sprite) {
+            return { x: spawnX, y: spawnY };
+        }
 
+        const roomW = this._roomPixelWidth || roomDef.width || 1280;
         const roomH = this._roomPixelHeight || roomDef.height || 720;
-        return Math.max(0, Math.min(spawnY, roomH - 120));
+        const marginX = 56;
+        const marginY = 60;
+
+        let x = spawnX;
+        let y = spawnY;
+
+        if (fromDir === 'right') {
+            x = marginX;
+        } else if (fromDir === 'left') {
+            x = roomW - marginX;
+        } else {
+            x = Phaser.Math.Clamp(spawnX, marginX, roomW - marginX);
+        }
+
+        if (fromDir === 'down') {
+            y = marginY;
+        } else if (fromDir === 'up') {
+            y = roomH - marginY;
+        } else {
+            y = Phaser.Math.Clamp(spawnY, marginY, roomH - marginY);
+        }
+
+        return { x, y };
     }
 
     /**
@@ -624,6 +718,7 @@ class GameScene extends Phaser.Scene {
         if (this._transitioning || !this.player) return;
         if (this.player.isHurt || this.player.dead) return;
         if (!this._roomExits || this._roomExits.length === 0) return;
+        if (this._lockedRoom) return; // arena locked — exits sealed
 
         const px = this.player.x;
         const py = this.player.y;
@@ -719,6 +814,23 @@ class GameScene extends Phaser.Scene {
         this.chapterBg.tileScaleX = coverScale;
         this.chapterBg.tileScaleY = coverScale;
 
+        // 3-layer cave parallax backgrounds (already loaded in BootScene)
+        this.bgFar = this.add.tileSprite(0, 0, this.scale.width, this.scale.height, 'bg_far')
+            .setOrigin(0, 0)
+            .setScrollFactor(0)
+            .setDepth(-10)
+            .setAlpha(0.6);
+        this.bgMid = this.add.tileSprite(0, 0, this.scale.width, this.scale.height, 'bg_mid')
+            .setOrigin(0, 0)
+            .setScrollFactor(0)
+            .setDepth(-8)
+            .setAlpha(0.5);
+        this.bgNear = this.add.tileSprite(0, 0, this.scale.width, this.scale.height, 'bg_near')
+            .setOrigin(0, 0)
+            .setScrollFactor(0)
+            .setDepth(-6)
+            .setAlpha(0.3);
+
         this._updateChapterBackground();
     }
 
@@ -737,8 +849,11 @@ class GameScene extends Phaser.Scene {
     }
 
     _updateChapterBackground() {
-        if (!this.chapterBg) return;
-        this.chapterBg.tilePositionX = this._getChapterScrollX() * this.chapterBgParallax;
+        const scrollX = this._getChapterScrollX();
+        if (this.bgFar) this.bgFar.tilePositionX = scrollX * 0.02;
+        if (this.bgMid) this.bgMid.tilePositionX = scrollX * 0.07;
+        if (this.bgNear) this.bgNear.tilePositionX = scrollX * 0.14;
+        if (this.chapterBg) this.chapterBg.tilePositionX = scrollX * this.chapterBgParallax;
     }
 
     _buildBackground(roomDef) {
@@ -749,26 +864,84 @@ class GameScene extends Phaser.Scene {
             : Math.min(roomDef.tint ? roomDef.tint.alpha : 0, 0.10);
         if (roomDef.tint) {
             this.bgTint = this.add.rectangle(w / 2, h / 2, w, h, roomDef.tint.color, tintAlpha)
-                .setDepth(1);
+                .setDepth(-2);
         }
     }
 
-    _drawPlatformVisuals() {
-        if (!this._tilePlatforms) return;
-        this._platformLineGfx = this.add.graphics().setDepth(2);
-        this._tilePlatforms.forEachTile(tile => {
-            if (tile.index === -1) return;
-            const px = tile.pixelX;
-            const py = tile.pixelY;
-            const tw = tile.width;
-            const th = tile.height;
-            this._platformLineGfx.fillStyle(0x0a1a2a, 1);
-            this._platformLineGfx.fillRect(px, py, tw, th);
-            this._platformLineGfx.fillStyle(0x142838, 0.9);
-            this._platformLineGfx.fillRect(px + 2, py + 2, tw - 4, th - 4);
-            this._platformLineGfx.fillStyle(0x7FE0DE, 1);
-            this._platformLineGfx.fillRect(px, py, tw, 3);
-        });
+    _drawForegroundSilhouette() {
+        if (!this._tileGround && !this._tilePlatforms) return;
+
+        // Ground tiles: faint texture hint (mostly shows through black silhouette below)
+        if (this._tileGround) this._tileGround.setAlpha(0.2);
+
+        this._fgSilhouette = this.add.graphics().setDepth(-1);
+
+        const OUTLINE_COLOR = 0x7FE0DE;
+        const OUTLINE_ALPHA = 0.5;
+        const LINE_WIDTH = 1;
+
+        const drawLayer = (layer) => {
+            if (!layer) return;
+            layer.forEachTile(tile => {
+                if (tile.index === -1) return;
+                const px = tile.pixelX;
+                const py = tile.pixelY;
+                const tw = tile.width;
+                const th = tile.height;
+
+                // Pure black fill (HK-style silhouette)
+                this._fgSilhouette.fillStyle(0x000000, 1);
+                this._fgSilhouette.fillRect(px, py, tw, th);
+
+                // Edge-aware outline: only draw edges facing empty space
+                const col = tile.x;
+                const row = tile.y;
+
+                this._fgSilhouette.lineStyle(LINE_WIDTH, OUTLINE_COLOR, OUTLINE_ALPHA);
+
+                if (!layer.hasTileAt(col, row - 1))
+                    this._fgSilhouette.lineBetween(px, py, px + tw, py);
+                if (!layer.hasTileAt(col, row + 1))
+                    this._fgSilhouette.lineBetween(px, py + th, px + tw, py + th);
+                if (!layer.hasTileAt(col - 1, row))
+                    this._fgSilhouette.lineBetween(px, py, px, py + th);
+                if (!layer.hasTileAt(col + 1, row))
+                    this._fgSilhouette.lineBetween(px + tw, py, px + tw, py + th);
+            });
+        };
+
+        drawLayer(this._tileGround);
+        drawLayer(this._tilePlatforms);
+    }
+
+    _createDustEmitter() {
+        // Generate a tiny 4×4 soft circle texture once
+        if (!this.textures.exists('particle_dust')) {
+            const g = this.make.graphics();
+            g.fillStyle(0xffffff);
+            g.fillCircle(3, 3, 2);
+            g.fillStyle(0xffffff, 0.4);
+            g.fillCircle(3, 3, 3);
+            g.generateTexture('particle_dust', 6, 6);
+            g.destroy();
+        }
+
+        const w = this._roomPixelWidth || this.scale.width;
+        const h = this._roomPixelHeight || this.scale.height;
+
+        this._dustEmitter = this.add.particles(0, 0, 'particle_dust', {
+            x: { min: 0, max: w },
+            y: { min: h * 0.5, max: h },
+            speed: { min: 8, max: 22 },
+            angle: { min: 270, max: 290 },
+            scale: { start: 0.8, end: 0.1 },
+            alpha: { start: 0.35, end: 0 },
+            lifespan: { min: 6000, max: 12000 },
+            frequency: 100,
+            blendMode: 'ADD',
+            tint: 0xa0d8ff,
+            quantity: 1,
+        }).setDepth(-1);
     }
 
     /* ================================================================== */
@@ -794,6 +967,12 @@ class GameScene extends Phaser.Scene {
                     break;
                 case 'skeleton':
                     enemy = new Skeleton(this, eDef.x, eDef.y);
+                    break;
+                case 'bloated':
+                    enemy = new BloatedShadow(this, eDef.x, eDef.y);
+                    break;
+                case 'crystal':
+                    enemy = new WandererCrystal(this, eDef.x, eDef.y);
                     break;
                 default:
                     continue;
@@ -827,6 +1006,81 @@ class GameScene extends Phaser.Scene {
     }
 
     /* ================================================================== */
+    /*  Locked room (arena) system                                           */
+    /* ================================================================== */
+
+    _setupLockedRoom(roomDef) {
+        // Only the shaft room uses locked-arena mechanic
+        if (roomDef.id !== 'shaft') {
+            this._lockedRoom = null;
+            return;
+        }
+
+        // Check if all enemies for this room are already killed (permanent)
+        const allDead = this._spawnEnemies.every(e => this.enemiesKilled.includes(e.id));
+        if (allDead) {
+            this._lockedRoom = null;
+            return;
+        }
+
+        this._lockedRoom = roomDef.id;
+        this._drawLockBarriers();
+    }
+
+    _drawLockBarriers() {
+        if (this._lockBarrierGraphics) this._lockBarrierGraphics.destroy();
+        this._lockBarrierGraphics = this.add.graphics().setDepth(20);
+
+        // Top exit barrier
+        this._lockBarrierGraphics.fillStyle(0x8800aa, 0.5);
+        this._lockBarrierGraphics.fillRect(420, 0, 120, 16);
+        this._lockBarrierGraphics.fillStyle(0xaa44ff, 0.3);
+        this._lockBarrierGraphics.fillRect(440, 0, 80, 16);
+
+        // Bottom exit barrier (behind ground)
+        this._lockBarrierGraphics.fillStyle(0x8800aa, 0.5);
+        this._lockBarrierGraphics.fillRect(420, 700, 120, 20);
+        this._lockBarrierGraphics.fillStyle(0xaa44ff, 0.3);
+        this._lockBarrierGraphics.fillRect(440, 700, 80, 20);
+
+        // Lock animation
+        this.tweens.add({
+            targets: this._lockBarrierGraphics,
+            alpha: 0.7,
+            yoyo: true,
+            duration: 800,
+            repeat: -1,
+        });
+    }
+
+    _checkLockedRoom() {
+        if (!this._lockedRoom) return;
+
+        // Check if all enemies in the current room are dead
+        const aliveCount = this.enemyInstances.filter(e => !e.dead).length;
+        if (aliveCount === 0) {
+            this._unlockRoom();
+        }
+    }
+
+    _unlockRoom() {
+        // Destroy barrier visuals
+        if (this._lockBarrierGraphics) {
+            this._lockBarrierGraphics.destroy();
+            this._lockBarrierGraphics = null;
+        }
+
+        // Screen shake + flash to signal unlock
+        this.cameras.main.shake(300, 0.015);
+        this.cameras.main.flash(200, 136, 0, 170);
+
+        // Sound
+        this.sound.play('sfx_enemy_death', { volume: 0.6, detune: -400 });
+
+        this._lockedRoom = null;
+    }
+
+    /* ================================================================== */
     /*  Room builder: NPCs                                                   */
     /* ================================================================== */
 
@@ -838,6 +1092,8 @@ class GameScene extends Phaser.Scene {
                 name: nDef.name,
                 dialogues: nDef.dialogues,
                 hairColor: nDef.hairColor,
+                behavior: nDef.behavior,
+                walkRadius: nDef.walkRadius,
             });
             this.npcs.push(npc);
         }
@@ -937,6 +1193,63 @@ class GameScene extends Phaser.Scene {
                 }, this,
             );
             this._roomColliders.push(doorCollider);
+        }
+    }
+
+    /* ================================================================== */
+    /*  Room builder: Destructible Walls                                      */
+    /* ================================================================== */
+
+    _buildDestructibleWallsFromSpawns() {
+        if (!this._spawnDestructibleWalls || this._spawnDestructibleWalls.length === 0) return;
+
+        for (const wDef of this._spawnDestructibleWalls) {
+            if (this._spawnedWallIds.includes(wDef.wallId)) continue;
+
+            const wall = new DestructibleWall(
+                this, wDef.x, wDef.y, wDef.w, wDef.h, wDef.wallId, wDef.maxHp,
+            );
+            this.destructibleWalls.push(wall);
+        }
+    }
+
+    _onPlayerHitWall(wallZone) {
+        const wall = this.destructibleWalls.find(w => w.body === wallZone);
+        if (!wall || wall.destroyed) return;
+
+        const player = this.player;
+        const isAttacking = player.state === 'attack1_active' ||
+                            player.state === 'attack2_active' ||
+                            player.state === 'air_attack_active';
+        if (!isAttacking) return;
+
+        const sword = player.abilities.sword;
+        let dmg;
+        switch (player.state) {
+            case 'attack1_active': dmg = sword ? 8 : 3; break;
+            case 'attack2_active': dmg = sword ? 7 : 5; break;
+            case 'air_attack_active': dmg = sword ? 6 : 4; break;
+            default: dmg = 3;
+        }
+
+        wall.takeDamage(dmg, player.facingRight ? 1 : -1);
+    }
+
+    /* ================================================================== */
+    /*  Room builder: Moving Platforms (elevators)                          */
+    /* ================================================================== */
+
+    _buildMovingPlatformsFromSpawns() {
+        if (!this._spawnMovingPlatforms || this._spawnMovingPlatforms.length === 0) return;
+        if (!this._movingPlatforms) this._movingPlatforms = [];
+
+        for (const mpDef of this._spawnMovingPlatforms) {
+            const mp = new MovingPlatform(
+                this, mpDef.x, mpDef.y, mpDef.width, mpDef.rangeY, mpDef.speed,
+            );
+            this._movingPlatforms.push(mp);
+            const collider = this.physics.add.collider(this.player.sprite, mp.body);
+            this._roomColliders.push(collider);
         }
     }
 
@@ -1087,42 +1400,40 @@ class GameScene extends Phaser.Scene {
             if (isVertical) {
                 const lipY = exit.dir === 'up' ? exit.y + 10 : exit.y - 10;
                 const centerX = exit.x + exit.w / 2;
-                marker.fillStyle(0x0a0e17, 0.9);
-                marker.fillRect(exit.x - 8, lipY - 6, exit.w + 16, 12);
-                marker.lineStyle(1, glow, 0.18);
-                marker.strokeRect(exit.x - 8, lipY - 6, exit.w + 16, 12);
+                marker.fillStyle(0x05070d, 0.96);
+                marker.fillRect(exit.x - 12, lipY - 8, exit.w + 24, 16);
+                marker.fillStyle(0x11151f, 0.95);
+                marker.fillRect(exit.x - 4, lipY - 12, exit.w + 8, 24);
+                marker.lineStyle(1, glow, 0.22);
+                marker.strokeRect(exit.x - 4, lipY - 12, exit.w + 8, 24);
+                marker.lineStyle(2, 0x000000, 1);
+                marker.strokeRect(exit.x - 1, lipY - 9, exit.w + 2, 18);
 
-                for (let i = -1; i <= 1; i++) {
-                    const guide = this.add.triangle(
-                        centerX + i * 16, lipY + (exit.dir === 'up' ? -14 : 14),
-                        0, exit.dir === 'up' ? 7 : -7, -4, 0, 4, 0,
-                        glow, 0.18,
-                    ).setDepth(-2);
-                    this._exitMarkers.push(guide);
-                }
+                const rim = this.add.graphics().setDepth(-1);
+                rim.lineStyle(1, glow, 0.35);
+                rim.strokeLineShape(new Phaser.Geom.Line(centerX - 14, lipY - 16, centerX + 14, lipY - 16));
+                rim.strokeLineShape(new Phaser.Geom.Line(centerX - 14, lipY + 16, centerX + 14, lipY + 16));
+                this._exitMarkers.push(rim);
             } else {
                 const rightSide = exit.dir === 'right';
-                const frameX = rightSide ? exit.x - 12 : exit.x + exit.w - 4;
-                const innerX = rightSide ? exit.x + 1 : exit.x - 9;
+                const frameX = rightSide ? exit.x - 16 : exit.x + exit.w + 2;
+                const innerX = rightSide ? exit.x - 2 : exit.x + 2;
+                const slitX = rightSide ? exit.x + 2 : exit.x + exit.w - 10;
 
-                marker.fillStyle(0x0a0e17, 0.9);
-                marker.fillRect(frameX, exit.y - 18, 12, exit.h + 36);
-                marker.fillStyle(0x111726, 0.7);
-                marker.fillRect(innerX, exit.y - 12, 8, exit.h + 24);
-                marker.lineStyle(1, glow, 0.18);
-                marker.strokeRect(innerX, exit.y - 12, 8, exit.h + 24);
+                marker.fillStyle(0x05070d, 0.96);
+                marker.fillRect(frameX, exit.y - 20, 16, exit.h + 40);
+                marker.fillStyle(0x11151f, 0.96);
+                marker.fillRect(innerX, exit.y - 14, 10, exit.h + 28);
+                marker.lineStyle(1, glow, 0.22);
+                marker.strokeRect(innerX, exit.y - 14, 10, exit.h + 28);
+                marker.lineStyle(2, 0x000000, 1);
+                marker.strokeRect(slitX, exit.y - 10, 4, exit.h + 20);
 
-                for (let i = 0; i < 3; i++) {
-                    const arrow = this.add.triangle(
-                        rightSide ? exit.x - 14 : exit.x + exit.w + 14,
-                        exit.y + 10 + i * 18,
-                        rightSide ? -4 : 4, 0,
-                        rightSide ? 3 : -3, -3,
-                        rightSide ? 3 : -3, 3,
-                        glow, 0.14,
-                    ).setDepth(-2);
-                    this._exitMarkers.push(arrow);
-                }
+                const rim = this.add.graphics().setDepth(-1);
+                rim.lineStyle(1, glow, 0.32);
+                rim.strokeLineShape(new Phaser.Geom.Line(frameX + 2, exit.y - 16, frameX + 2, exit.y + exit.h + 16));
+                rim.strokeLineShape(new Phaser.Geom.Line(frameX + 12, exit.y - 16, frameX + 12, exit.y + exit.h + 16));
+                this._exitMarkers.push(rim);
             }
 
             this._exitMarkers.push(marker);
@@ -1229,6 +1540,7 @@ class GameScene extends Phaser.Scene {
                     if (closed) {
                         this.isTalking = false;
                         this.talkingNPC = null;
+                        this.player.resetToIdle();
                     }
                 }
                 return;
@@ -1473,6 +1785,9 @@ class GameScene extends Phaser.Scene {
                 this.enemiesKilled.push(enemy.spawnId);
             }
         }
+
+        // Check if locked room should unlock
+        this._checkLockedRoom();
     }
 
     _onEnemyTouchPlayer(enemySprite) {
@@ -1650,6 +1965,7 @@ class GameScene extends Phaser.Scene {
     /** Persist current game state to localStorage at the given slot (0-4). */
     _saveGame(slotIndex = 0) {
         const data = {
+            version: 2,
             roomId: this.currentRoomId,
             x: Math.round(this.player.x),
             y: Math.round(this.player.y),
@@ -1661,6 +1977,7 @@ class GameScene extends Phaser.Scene {
             enemiesKilled: [...this.enemiesKilled],
             collectedItems: [...this.collectedPersistentItems],
             abilityItemsCollected: [...this.abilityItemsCollected],
+            destroyedWalls: [...this._spawnedWallIds],
             visitedRooms: [...(this.visitedRooms || [this.currentRoomId])],
             bossDefeated: this._bossDefeated || false,
             timestamp: Date.now(),
@@ -1689,6 +2006,9 @@ class GameScene extends Phaser.Scene {
         }
         if (data.enemiesKilled) {
             this.enemiesKilled = data.enemiesKilled;
+        }
+        if (data.destroyedWalls) {
+            this._spawnedWallIds = data.destroyedWalls;
         }
         if (data.visitedRooms) {
             this.visitedRooms = data.visitedRooms;
@@ -1727,6 +2047,13 @@ class GameScene extends Phaser.Scene {
         // Sync room state
         this._syncRoomStates();
 
+        // Refresh HUD from restored player state
+        if (this.hud && this.hud.isReady && this.player) {
+            this.hud.refreshFromPlayer(this.player);
+        } else {
+            this._pendingHudRefresh = true;
+        }
+
         // Fade in
         this.cameras.main.fadeIn(400, 0, 0, 0);
 
@@ -1741,6 +2068,11 @@ class GameScene extends Phaser.Scene {
         if (this._spawnLockFrames > 0) this._spawnLockFrames--;
         this._updateChapterBackground();
         this.pauseMenu.update();
+
+        if (this._pendingHudRefresh && this.hud && this.hud.isReady && this.player) {
+            this.hud.refreshFromPlayer(this.player);
+            this._pendingHudRefresh = false;
+        }
 
         // Update the map overlay even when paused (so player marker moves)
         if (this.mapView) {
@@ -1765,8 +2097,27 @@ class GameScene extends Phaser.Scene {
             return;
         }
 
+        if (this._spawnLockFrames > 0) {
+            this._spawnLockFrames--;
+            this.hud.drawPips(this.player.hp, this.player.maxHp);
+            this.hud.drawFeelings(this.player.feelings, this.player.feelingsMax);
+            this.hud.drawAbilities(this.player.abilities);
+            return;
+        }
+
         // ---- Exit detection ----
         this._checkExits();
+
+        // ---- NPC ambient updates ----
+        if (!this.isTalking && this.npcs && this.npcs.length > 0) {
+            this.npcs.forEach(npc => npc.update(delta));
+        }
+
+        // ---- Destructible walls ----
+        if (this.destructibleWalls && this.destructibleWalls.length > 0) {
+            this.destructibleWalls.forEach(w => w.update());
+            this.destructibleWalls = this.destructibleWalls.filter(w => !w.destroyed);
+        }
 
         // ---- NPC dialogue (freezes gameplay while talking) ----
         if (this.isTalking && this.talkingNPC) {
@@ -1776,6 +2127,7 @@ class GameScene extends Phaser.Scene {
                 if (closed) {
                     this.isTalking = false;
                     this.talkingNPC = null;
+                    this.player.resetToIdle();
                 }
             }
             if (this.isTalking && this.talkingNPC === talkingNPC) {
@@ -1822,6 +2174,11 @@ class GameScene extends Phaser.Scene {
 
         this.abilityGates = this.abilityGates.filter(gate => !gate.unlocked);
         this.abilityGates.forEach(gate => gate.update(time));
+
+        // Update moving platforms
+        if (this._movingPlatforms) {
+            this._movingPlatforms.forEach(mp => mp.update(time, delta));
+        }
 
         this.hud.drawPips(this.player.hp, this.player.maxHp);
         this.hud.drawFeelings(this.player.feelings, this.player.feelingsMax);

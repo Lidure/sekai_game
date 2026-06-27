@@ -20,6 +20,14 @@
         this.load.image('item_sword',   'assets/images/weapon_sword.png');
         this.load.image('player_down',   'assets/images/player_mfy/mfy_down.png');
         this.load.image('player_jump',   'assets/images/player_mfy/mfy_jump.png');
+        this.load.svg('ui_hp_mask',      'assets/游戏素材/25.svg', { width: 64, height: 64 });
+
+        // Friendly NPC (KND)
+        this.load.image('npc_knd_stand', 'assets/游戏素材/player_knd/knd_stand.png');
+        this.load.spritesheet('npc_knd_walk', 'assets/游戏素材/player_knd/knd_walk.png', {
+            frameWidth: 720,
+            frameHeight: 1280,
+        });
 
         // Player run spritesheet (6 columns 脳 5 rows, 720脳720 each 鈥?frames 0-10 for 11-frame cycle)
         this.load.spritesheet('player_run_sheet', 'assets/images/player_mfy/mfy_run.png', {
@@ -71,54 +79,19 @@
         this.load.image('enemy_bat',    'assets/images/enemies/floating/bat/Bat_Full.png');
         this.load.spritesheet('enemy_skeleton', 'assets/images/enemies/shadow/skeleton/skeleton-Sheet.png', { frameWidth: 48, frameHeight: 56 });
 
-        // 鈹€鈹€ Audio 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-        // BGM
-        this.load.audio('bgm_menu',      'assets/audio/bgm/menu_title.mp3');
-        this.load.audio('bgm_explore',   'assets/audio/bgm/chiptune_exploration.mp3');
-        this.load.audio('bgm_boss_p1',   'assets/audio/bgm/8bit_action_boss_battle_bpm145.mp3');
-        this.load.audio('bgm_boss_p2',   'assets/audio/bgm/8bit_action_boss_battle_climax_bpm185.mp3');
-        this.load.audio('bgm_credits',   'assets/audio/bgm/credits.mp3');
+        // ── BloatedShadow: Golem first idle frame ──
+        this.load.image('enemy_golem_raw', 'assets/images/enemies/shadow/golem/Golem_IdleA.png');
 
-        // Player SFX
-        this.load.audio('sfx_player_jump',  'assets/audio/sfx/player/sfx_player_jump_01.wav');
-        this.load.audio('sfx_player_hurt',  'assets/audio/sfx/player/sfx_player_hurt_01.wav');
-        this.load.audio('sfx_player_death', 'assets/audio/sfx/player/player_death.mp3');
-        this.load.audio('sfx_player_dash',  'assets/audio/sfx/magic/magic_spell_fast.mp3');
-
-        // Weapon SFX
-        this.load.audio('sfx_sword_att1', 'assets/audio/sfx/sword/sword_synth_shing.mp3');
-        this.load.audio('sfx_sword_att2', 'assets/audio/sfx/sword/sword_attack.mp3');
-        this.load.audio('sfx_sword_air',  'assets/audio/sfx/sword/slash_rpg.mp3');
-        this.load.audio('sfx_punch',      'assets/audio/sfx/enemy/sfx_enemy_hurt_01.wav');
-        this.load.audio('sfx_sword_swing','assets/audio/sfx/sword/sfx_sword_blade_01.mp3');
-
-        // Enemy SFX
-        this.load.audio('sfx_enemy_hurt',  'assets/audio/sfx/enemy/sfx_enemy_hurt_01.wav');
-        this.load.audio('sfx_enemy_death', 'assets/audio/sfx/enemy/sfx_enemy_death_01.wav');
-        this.load.audio('sfx_enemy_attack','assets/audio/sfx/enemy/sfx_enemy_laser_01.mp3');
-        this.load.audio('sfx_boss_hit',    'assets/audio/sfx/enemy/sfx_enemy_metal_hit_01.mp3');
-        this.load.audio('sfx_boss_roar',   'assets/audio/sfx/enemy/sfx_enemy_roar_01.mp3');
-        this.load.audio('sfx_boss_death',  'assets/audio/sfx/enemy/sfx_enemy_death_02.mp3');
-
-        // UI SFX
-        this.load.audio('sfx_ui_navigate', 'assets/audio/sfx/ui/sfx_ui_navigate_01.wav');
-        this.load.audio('sfx_ui_confirm',  'assets/audio/sfx/ui/sfx_ui_confirm_01.wav');
-        this.load.audio('sfx_ui_start',    'assets/audio/sfx/ui/menu_select.mp3');
-
-        // Combo / Feelings SFX
-        this.load.audio('sfx_combo_hit',     'assets/audio/sfx/combo/sfx_combo_resonance_01.wav');
-        this.load.audio('sfx_combo_feelings','assets/audio/sfx/combo/sfx_combo_feelings_01.mp3');
-        this.load.audio('sfx_combo_victory', 'assets/audio/sfx/combo/sfx_combo_powerup_01.mp3');
     }
 
     create() {
         // NOTE: zone ground tiles, cave backgrounds, and deco_stalactite are loaded
-        // in preload() as real image assets — no longer programmatic.
+        // in preload() as real image assets ? no longer programmatic.
         // Crystal, torch, and vine are still generated below.
         this._generateDecorationTextures();
         this._generateLegacyTextures();
 
-        // 鈹€鈹€ Resize all 720脳720 player textures to 64脳64 鈹€鈹€
+        // ???? Resize all 720?720 player textures to 64?64 ????
         const targetSize = 64;
         const resizeTo64 = (key) => {
             const src = this.textures.get(key).getSourceImage();
@@ -156,7 +129,7 @@
             this.textures.addCanvas('player_att_frame_' + i, canvas);
         }
 
-        // 鈹€鈹€ Extract run spritesheet frames at 64脳64 鈹€鈹€
+        // ???? Extract run spritesheet frames at 64?64 ????
         const runSrc = this.textures.get('player_run_sheet').getSourceImage();
         const runCols = 6;
         const runFrameSize = 720;
@@ -199,7 +172,7 @@
             repeat: -1,
         });
 
-        // Attack1 animation (frames 0-3 at 12fps 鈥?~333ms)
+        // Attack1 animation (frames 0-3 at 12fps ? ~333ms)
         this.anims.create({
             key: 'player_att1',
             frames: [
@@ -212,7 +185,7 @@
             repeat: 0,
         });
 
-        // Attack2 animation (frames 4-6 at 10fps 鈥?~300ms)
+        // Attack2 animation (frames 4-6 at 10fps ? ~300ms)
         this.anims.create({
             key: 'player_att2',
             frames: [
@@ -224,7 +197,7 @@
             repeat: 0,
         });
 
-        // Sword attack animation (5 single-image frames at 12fps 鈥?~417ms total swing)
+        // Sword attack animation (5 single-image frames at 12fps ? ~417ms total swing)
         this.anims.create({
             key: 'player_sword_attack',
             frames: [
@@ -251,6 +224,15 @@
             repeat: 0,
         });
 
+        if (!this.anims.exists('npc_knd_walk')) {
+            this.anims.create({
+                key: 'npc_knd_walk',
+                frames: this.anims.generateFrameNumbers('npc_knd_walk', { start: 0, end: 15 }),
+                frameRate: 8,
+                repeat: -1,
+            });
+        }
+
         // Sword air attack animation (sword_3, sword_4, sword_5 as a fast 3-frame animation)
         this.anims.create({
             key: 'player_sword_air_attack',
@@ -272,15 +254,40 @@
         this._generateSkeletonTextures();
         this.textures.remove('enemy_skeleton');
 
+        // ── BloatedShadow: extract first 64×64 Golem frame ──
+        this._generateGolemTexture();
+
+        // ── WandererCrystal: programmatic teal hexagon ──
+        this._generateCrystalTexture();
+
         // Item textures (collectible pickups)
         this._generateItemTextures();
 
-        // Vanish textures (player death animation 鈥?dissipating ghost silhouette)
+        // Vanish textures (player death animation ? dissipating ghost silhouette)
         this._generateVanishTextures();
 
-        this.scene.start('MenuScene');
+        this._decodeEmbeddedAudio()
+            .then(() => {
+                this.scene.start('MenuScene');
+            })
+            .catch((err) => {
+                console.error(err);
+                this.scene.start('MenuScene');
+            });
     }
 
+    _decodeEmbeddedAudio() {
+        const audioAssets = window.SEKAI_AUDIO_ASSETS || null;
+        if (!audioAssets) {
+            throw new Error('SEKAI_AUDIO_ASSETS is missing. Load src/audio-manifest.js before BootScene.');
+        }
+
+        const audioFiles = Object.entries(audioAssets).map(([key, data]) => ({ key, data }));
+        return new Promise((resolve) => {
+            this.sound.once(Phaser.Sound.Events.DECODED_ALL, resolve);
+            this.sound.decodeAudio(audioFiles);
+        });
+    }
     /* _generateEnemyTextures() removed 鈥?enemy textures now loaded as real
      * pixel art assets in preload(). See enemy_shadow (dark_forest_slime)
      * and enemy_shard (ghost_gothicvania) image loads above. */
@@ -393,6 +400,40 @@
         makeFrame(0, 'enemy_skeleton_idle');
         makeFrame(3, 'enemy_skeleton_windup');
         makeFrame(6, 'enemy_skeleton_swing');
+    }
+
+    /** Extract first 64×64 frame from Golem_IdleA (256×64 spritesheet). */
+    _generateGolemTexture() {
+        const src = this.textures.get('enemy_golem_raw').getSourceImage();
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(src, 0, 0, 64, 64, 0, 0, 64, 64);
+        this.textures.addCanvas('enemy_golem', canvas);
+        this.textures.remove('enemy_golem_raw');
+    }
+
+    /** Generate programmatic WandererCrystal texture (glowing teal hexagon). */
+    _generateCrystalTexture() {
+        const g = this.make.graphics({ add: false });
+        // Outer glow
+        g.fillStyle(0x40e0d0, 0.3);
+        g.fillCircle(16, 16, 14);
+        // Diamond body
+        g.fillStyle(0x40e0d0, 0.8);
+        g.fillTriangle(16, 0, 0, 16, 16, 32);
+        g.fillTriangle(16, 0, 32, 16, 16, 32);
+        // Inner highlight
+        g.fillStyle(0x80fff0, 0.9);
+        g.fillTriangle(16, 4, 4, 16, 16, 28);
+        g.fillTriangle(16, 4, 28, 16, 16, 28);
+        // Core dot
+        g.fillStyle(0xc0ffff, 1);
+        g.fillCircle(16, 16, 3);
+        g.generateTexture('enemy_crystal', 32, 32);
+        g.destroy();
     }
 
     /** Generate programmatic textures for collectible items. */

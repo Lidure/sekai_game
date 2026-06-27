@@ -1,44 +1,34 @@
-/**
- * NPC — Interactive non-player character for SEKAI: 25-ji Metroidvania.
- *
- * Visual:
- *   - Phaser Graphics character (head + body + hair), ~24×32 world pixels
- *   - 25-ji colour palette: dark teal body, pale skin, teal/character hair
- *
- * Interaction:
- *   - Proximity check within 60px of NPC centre
- *   - Shows "NAME  ◆ TALK (J)" prompt at bottom-center of screen
- *   - Player presses J → dialogue box opens with typewriter effect
- *   - Each J press advances to next line; last line closes dialogue
- *   - Walking away (>100px) resets dialogue index
- *
- * Dialogue UI:
- *   - Dark semi-transparent box at bottom of screen (500×100)
- *   - Name in cyan, dialogue text in white, ▼ / ◆ CLOSE indicator
- *   - Typewriter effect: one character every 30ms
- *   - J during typewriter → complete line immediately
- *
- * Depth: visuals at 5, prompt & dialogue at 200
- */
 class NPC {
-    /**
-     * @param {Phaser.Scene} scene    - Owning GameScene
-     * @param {number}       x        - World X position
-     * @param {number}       y        - World Y position
-     * @param {object}       config
-     * @param {string}       config.name      - NPC display name
-     * @param {string[]}     config.dialogues - Line-by-line dialogue array
-     * @param {number}       [config.hairColor] - Hex colour for hair (default 0x2EC4B6)
-     */
+    static DIALOGUE_MAP = {
+        'The echoes in this place... they sound like her voice.': 'npcAscent_0',
+        'She left something behind. I can feel it.': 'npcAscent_1',
+        "You're looking for her too, aren't you?": 'npcAscent_2',
+        "I've been watching you. You carry her sword well.": 'npcMid_0',
+        'The door ahead requires resolve. Not just strength.': 'npcMid_1',
+        "When you face her... remember that she's also facing herself.": 'npcMid_2',
+    };
+
     constructor(scene, x, y, config) {
         this.scene = scene;
+        this.homeX = x;
+        this.homeY = y;
         this.x = x;
         this.y = y;
-        this.name = config.name || '???';
+        this.name = config.name || 'KND';
         this.dialogues = config.dialogues || ['...'];
-        this.hairColor = config.hairColor !== undefined ? config.hairColor : 0x2EC4B6;
 
-        // Dialogue state
+        this.behavior = config.behavior || 'wander';
+        this.walkRadius = config.walkRadius || Phaser.Math.Between(34, 64);
+        this.walkSpeed = config.walkSpeed || Phaser.Math.Between(26, 34);
+        this.pauseMin = config.pauseMin || 0.7;
+        this.pauseMax = config.pauseMax || 1.8;
+        this.standSize = config.standSize || 72;
+        this.walkWidth = config.walkWidth || 48;
+        this.walkHeight = config.walkHeight || 86;
+        this.walkFootOffsetY = config.walkFootOffsetY || 14;
+        this.standFootOffsetY = config.standFootOffsetY || 8;
+        this.facingRight = false;
+
         this.dialogueIndex = 0;
         this.isTalking = false;
         this.isTyping = false;
@@ -46,87 +36,92 @@ class NPC {
         this.typewriterPos = 0;
         this.currentLine = '';
 
-        this._recalcBox();
+        this._moveState = 'rest';
+        this._moveTimer = Phaser.Math.FloatBetween(0.3, 1.2);
+        this._targetX = x;
+        this._pose = 'stand';
+        this._poseOffsetY = this.standFootOffsetY;
 
         this._createVisuals();
         this._createPrompt();
-        this._createDialogueBox();
     }
 
-    static PROXIMITY_RADIUS = 60;
-    static RESET_DISTANCE = 100;
+    static PROXIMITY_RADIUS = 72;
+    static RESET_DISTANCE = 112;
+    static BOX_W = 360;
+    static BOX_H = 90;
+    static BOX_MARGIN_BOTTOM = 24;
+    static BOX_PAD_X = 14;
+    static BOX_PAD_TOP = 10;
+    static BOX_PAD_BOTTOM = 10;
 
     /* ================================================================== */
     /*  Visuals                                                             */
     /* ================================================================== */
 
-    _recalcBox() {
-        const cam = this.scene.cameras.main;
-        const zoom = cam ? cam.zoom : 1;
-        const sw = this.scene.scale.width;
-        const sh = this.scene.scale.height;
-        const w = Math.min(760, sw - 80);
-        const h = 120;
-        const sx = (sw - w) / 2 / zoom;
-        const sy = (sh - h - 30) / zoom;
-        this._box = {
-            x: sx, y: sy, w: w / zoom, h: h / zoom,
-        };
-    }
-
     _createVisuals() {
-        this.gfx = this.scene.add.graphics().setDepth(5).setPosition(this.x, this.y);
-        this._drawCharacter();
+        this.sprite = this.scene.add.sprite(this.x, this.y, 'npc_knd_stand')
+            .setOrigin(0.5, 1)
+            .setDepth(6)
+            .setDisplaySize(this.standSize, this.standSize);
+        this.sprite.y = this.homeY + this._poseOffsetY;
+        this._setPose('stand');
     }
 
-    _drawCharacter() {
-        const g = this.gfx;
-        g.clear();
+    _setPose(pose) {
+        if (!this.sprite || !this.sprite.active) return;
+        this._pose = pose;
 
-        // Hair (rect on top of head)
-        g.fillStyle(this.hairColor, 1);
-        g.fillRect(-6, -25, 12, 8);
+        switch (pose) {
+            case 'walk':
+                if (this.sprite.texture.key !== 'npc_knd_walk' || !this.sprite.anims.isPlaying) {
+                    this.sprite.play('npc_knd_walk', true);
+                }
+                this._poseOffsetY = this.walkFootOffsetY;
+                this.sprite.setDisplaySize(this.walkWidth, this.walkHeight);
+                break;
+            case 'stand':
+            default:
+                if (this.sprite.anims && this.sprite.anims.isPlaying) {
+                    this.sprite.anims.stop();
+                }
+                this.sprite.setTexture('npc_knd_stand');
+                this._poseOffsetY = this.standFootOffsetY;
+                this.sprite.setDisplaySize(this.standSize, this.standSize);
+                break;
+        }
 
-        // Head (circle, pale skin)
-        g.fillStyle(0xE8F0F8, 1);
-        g.fillCircle(0, -16, 6);
+        this.sprite.y = this.homeY + this._poseOffsetY;
+        this.sprite.setFlipX(!this.facingRight);
+    }
 
-        // Eyes (two teal dots)
-        g.fillStyle(0x2EC4B6, 1);
-        g.fillCircle(-2, -17, 1.2);
-        g.fillCircle(2, -17, 1.2);
+    _syncLayout() {
+        if (!this.sprite) return;
 
-        // Body (rounded rect, dark teal)
-        g.fillStyle(0x1A3A3A, 1);
-        g.fillRoundedRect(-7, -10, 14, 22, 2);
+        this.x = this.sprite.x;
+        this.y = this.sprite.y;
 
-        // Outline (subtle teal)
-        g.lineStyle(1, 0x7FE0DE, 0.5);
-        g.strokeCircle(0, -16, 6);
-        g.strokeRoundedRect(-7, -10, 14, 22, 2);
+        const topY = this.sprite.y - this.sprite.displayHeight;
+        const promptY = topY - 10;
+        this.prompt.setPosition(this.sprite.x, promptY);
     }
 
     /* ================================================================== */
-    /*  Prompt                                                              */
+    /*  Prompt (world-space, above NPC)                                     */
     /* ================================================================== */
 
     _createPrompt() {
         this.prompt = this.scene.add.text(
-            this.scene.scale.width / 2,
-            this.scene.scale.height - 80,
-            this.name + '  \u25C6 TALK (J)',
+            this.x, this.y - 104,
+            this.name + '  ' + Lang.t('npcTalk'),
             {
-                fontSize: '14px',
+                fontSize: '11px',
                 fontFamily: 'monospace',
                 color: '#7FE0DE',
             },
-        ).setOrigin(0.5).setScrollFactor(0).setDepth(200).setAlpha(0);
+        ).setOrigin(0.5).setDepth(10).setAlpha(0);
     }
 
-    /**
-     * Show or hide the talk prompt. Pulses while visible.
-     * @param {boolean} visible
-     */
     showPrompt(visible) {
         if (visible && this.prompt.alpha < 0.01) {
             this.prompt.setAlpha(1);
@@ -145,101 +140,15 @@ class NPC {
     }
 
     /* ================================================================== */
-    /*  Dialogue Box                                                        */
-    /* ================================================================== */
-
-    _createDialogueBox() {
-        const b = this._box;
-
-        // Background
-        this.dialogueBg = this.scene.add.graphics()
-            .setDepth(200)
-            .setScrollFactor(0)
-            .setAlpha(0);
-
-        // Name
-        this.dialogueName = this.scene.add.text(
-            b.x + 15, b.y + 10,
-            this.name,
-            {
-                fontSize: '15px',
-                fontFamily: 'monospace',
-                color: '#7FE0DE',
-            },
-        ).setScrollFactor(0).setDepth(201).setAlpha(0);
-
-        // Dialogue text
-        this.dialogueText = this.scene.add.text(
-            b.x + 15, b.y + 32,
-            '',
-            {
-                fontSize: '13px',
-                fontFamily: 'monospace',
-                color: '#c8d8ff',
-                wordWrap: { width: b.w - 30 },
-            },
-        ).setScrollFactor(0).setDepth(201).setAlpha(0);
-
-        // Indicator (▼ or ◆ CLOSE)
-        this.dialogueIndicator = this.scene.add.text(
-            b.x + b.w - 15, b.y + b.h - 12,
-            '',
-            {
-                fontSize: '12px',
-                fontFamily: 'monospace',
-                color: '#7FE0DE',
-            },
-        ).setOrigin(1, 1).setScrollFactor(0).setDepth(201).setAlpha(0);
-    }
-
-    /** Redraw the dialogue background (called each time the box appears). */
-    _drawDialogueBg() {
-        const b = this._box;
-        const g = this.dialogueBg;
-        g.clear();
-
-        // Dark background
-        g.fillStyle(0x0A0A1A, 0.85);
-        g.fillRoundedRect(b.x, b.y, b.w, b.h, 4);
-
-        // Border
-        g.lineStyle(1, 0x2EC4B6, 0.5);
-        g.strokeRoundedRect(b.x, b.y, b.w, b.h, 4);
-    }
-
-    _showDialogueBox(visible) {
-        const alpha = visible ? 1 : 0;
-        this.dialogueBg.setAlpha(alpha);
-        this.dialogueName.setAlpha(alpha);
-        this.dialogueText.setAlpha(alpha);
-        this.dialogueIndicator.setAlpha(alpha);
-        if (visible) {
-            this._drawDialogueBg();
-        }
-    }
-
-    /* ================================================================== */
     /*  Proximity                                                           */
     /* ================================================================== */
 
-    /**
-     * Check whether a point is within interaction range of the NPC.
-     * @param {number} px - Player X
-     * @param {number} py - Player Y
-     * @returns {boolean}
-     */
     isPlayerNearby(px, py) {
         const dx = px - this.x;
         const dy = py - this.y;
         return (dx * dx + dy * dy) <= NPC.PROXIMITY_RADIUS * NPC.PROXIMITY_RADIUS;
     }
 
-    /**
-     * Check whether the player has walked far enough to reset dialogue.
-     * @param {number} px - Player X
-     * @param {number} py - Player Y
-     * @returns {boolean}
-     */
     isPlayerFar(px, py) {
         const dx = px - this.x;
         const dy = py - this.y;
@@ -250,75 +159,75 @@ class NPC {
     /*  Dialogue Logic                                                      */
     /* ================================================================== */
 
-    /** Open the dialogue box and begin typing the first line. */
     startDialogue() {
         this.isTalking = true;
         this.dialogueIndex = 0;
-        this._showDialogueBox(true);
+        this._moveState = 'rest';
+        this._setPose('stand');
         this._startTyping(this.dialogues[0]);
     }
 
-    /**
-     * Advance or complete the current dialogue line.
-     * - If still typing: complete the line immediately.
-     * - If finished: move to next line, or close if on the last line.
-     * @returns {boolean} true if dialogue was closed (reached end of array)
-     */
     advanceDialogue() {
         if (this.isTyping) {
-            // Reveal full text immediately
             this.typewriterPos = this.currentLine.length;
             this.isTyping = false;
             this._updateDialogueText();
             this._updateIndicator();
             return false;
         }
-
         this.dialogueIndex++;
         if (this.dialogueIndex >= this.dialogues.length) {
             this._closeDialogue();
             return true;
         }
-
         this._startTyping(this.dialogues[this.dialogueIndex]);
         return false;
     }
 
-    _startTyping(text) {
-        this.currentLine = text;
+    _startTyping(textOrKey) {
+        this.currentLine = this._resolveDialogueLine(textOrKey);
         this.typewriterPos = 0;
         this.typewriterTimer = 0;
         this.isTyping = true;
-        this._updateDialogueText();
-        this._updateIndicator();
+        this._pushDialogueToHud(true);
+    }
+
+    _resolveDialogueLine(textOrKey) {
+        if (textOrKey == null) return '';
+
+        if (typeof textOrKey === 'object') {
+            const code = Lang.getCode ? Lang.getCode() : 'cn';
+            if (code === 'en' && textOrKey.en) return textOrKey.en;
+            if (code !== 'en' && textOrKey.cn) return textOrKey.cn;
+            return textOrKey.en || textOrKey.cn || '';
+        }
+
+        const resolved = Lang.t(textOrKey);
+        if (resolved !== textOrKey) return resolved;
+
+        const key = NPC.DIALOGUE_MAP[textOrKey];
+        if (key) return Lang.t(key);
+
+        return textOrKey;
     }
 
     _updateDialogueText() {
-        const displayed = this.currentLine.substring(0, this.typewriterPos);
-        this.dialogueText.setText(displayed);
+        this._pushDialogueToHud(true);
     }
 
     _updateIndicator() {
-        if (this.isTyping) {
-            this.dialogueIndicator.setText('\u25BC');
-        } else if (this.dialogueIndex >= this.dialogues.length - 1) {
-            this.dialogueIndicator.setText('\u25C6 CLOSE (J)');
-        } else {
-            this.dialogueIndicator.setText('\u25BC');
-        }
+        this._pushDialogueToHud(true);
     }
 
-    /** Close dialogue and reset state. */
     _closeDialogue() {
         this.isTalking = false;
         this.dialogueIndex = 0;
-        this._showDialogueBox(false);
+        this._moveState = 'rest';
+        this._moveTimer = Phaser.Math.FloatBetween(0.6, 1.4);
+        this._setPose('stand');
+        this._pushDialogueToHud(false);
     }
 
-    /**
-     * Reset dialogue index if the player walked away.
-     * Does nothing if the NPC is currently in conversation.
-     */
     reset() {
         if (!this.isTalking) {
             this.dialogueIndex = 0;
@@ -326,33 +235,107 @@ class NPC {
     }
 
     /* ================================================================== */
-    /*  Update (typewriter)                                                 */
+    /*  Movement                                                            */
     /* ================================================================== */
 
-    /**
-     * Called each frame while the NPC is talking.
-     * Advances the typewriter effect.
-     * @param {number} delta - Frame delta in ms
-     */
-    update(delta) {
-        if (!this.isTalking) return;
+    _chooseWanderTarget() {
+        const minX = this.homeX - this.walkRadius;
+        const maxX = this.homeX + this.walkRadius;
+        let target = Phaser.Math.Between(minX, maxX);
+        if (Math.abs(target - this.sprite.x) < 10) {
+            target = target < this.homeX ? maxX : minX;
+        }
+        this._targetX = Phaser.Math.Clamp(target, minX, maxX);
+        this._moveState = 'walk';
+    }
 
-        if (this.isTyping) {
-            this.typewriterTimer += delta;
-            if (this.typewriterTimer >= 30) {
-                const advance = Math.floor(this.typewriterTimer / 30);
-                this.typewriterTimer = this.typewriterTimer % 30;
-                this.typewriterPos = Math.min(
-                    this.typewriterPos + advance,
-                    this.currentLine.length,
-                );
-                this._updateDialogueText();
-                if (this.typewriterPos >= this.currentLine.length) {
-                    this.isTyping = false;
-                    this._updateIndicator();
+    _updateWander(dt) {
+        if (this.isTalking) return;
+
+        this._moveTimer -= dt;
+        if (this._moveState === 'rest') {
+            this._setPose('stand');
+            if (this._moveTimer <= 0) {
+                this._moveTimer = Phaser.Math.FloatBetween(0.8, 2.1);
+                this._chooseWanderTarget();
+            }
+            return;
+        }
+
+        const dx = this._targetX - this.sprite.x;
+        const dir = Math.sign(dx);
+        if (Math.abs(dx) <= 2) {
+            this.sprite.x = this._targetX;
+            this._moveState = 'rest';
+            this._moveTimer = Phaser.Math.FloatBetween(this.pauseMin, this.pauseMax);
+            this._setPose('stand');
+            return;
+        }
+
+        this.facingRight = dir > 0;
+        this.sprite.x += dir * this.walkSpeed * dt;
+        this.sprite.x = Phaser.Math.Clamp(this.sprite.x, this.homeX - this.walkRadius, this.homeX + this.walkRadius);
+        this._setPose('walk');
+
+        if (this.sprite.x <= this.homeX - this.walkRadius + 2 || this.sprite.x >= this.homeX + this.walkRadius - 2) {
+            this._moveState = 'rest';
+            this._moveTimer = Phaser.Math.FloatBetween(this.pauseMin, this.pauseMax);
+            this._setPose('stand');
+        }
+    }
+
+    /* ================================================================== */
+    /*  Update                                                              */
+    /* ================================================================== */
+
+    update(delta) {
+        if (!this.sprite || !this.sprite.active) return;
+
+        if (this.isTalking) {
+            this._setPose('stand');
+            if (this.isTyping) {
+                this.typewriterTimer += delta;
+                if (this.typewriterTimer >= 30) {
+                    const advance = Math.floor(this.typewriterTimer / 30);
+                    this.typewriterTimer = this.typewriterTimer % 30;
+                    this.typewriterPos = Math.min(
+                        this.typewriterPos + advance,
+                        this.currentLine.length,
+                    );
+                    this._updateDialogueText();
+                    if (this.typewriterPos >= this.currentLine.length) {
+                        this.isTyping = false;
+                        this._updateIndicator();
+                    }
                 }
             }
+            return;
         }
+
+        const dt = delta / 1000;
+        if (this.behavior === 'wander') {
+            this._updateWander(dt);
+        } else {
+            this._setPose('stand');
+        }
+
+        this._syncLayout();
+    }
+
+    _pushDialogueToHud(visible) {
+        const hud = this.scene.hud;
+        if (!hud) return;
+
+        if (!visible) {
+            hud.hideNpcDialogue();
+            return;
+        }
+
+        const indicator = this.isTyping
+            ? '\u25BC'
+            : (this.dialogueIndex >= this.dialogues.length - 1 ? Lang.t('npcClose') : '\u25BC');
+
+        hud.showNpcDialogue(this.name, this.currentLine.substring(0, this.typewriterPos), indicator);
     }
 
     /* ================================================================== */
@@ -361,11 +344,9 @@ class NPC {
 
     destroy() {
         this.scene.tweens.killTweensOf(this.prompt);
-        if (this.gfx) this.gfx.destroy();
+        this.scene.tweens.killTweensOf(this.sprite);
+        if (this.sprite) this.sprite.destroy();
         if (this.prompt) this.prompt.destroy();
-        if (this.dialogueBg) this.dialogueBg.destroy();
-        if (this.dialogueName) this.dialogueName.destroy();
-        if (this.dialogueText) this.dialogueText.destroy();
-        if (this.dialogueIndicator) this.dialogueIndicator.destroy();
+        if (this.scene.hud) this.scene.hud.hideNpcDialogue();
     }
 }

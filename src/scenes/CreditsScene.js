@@ -1,52 +1,40 @@
-/**
- * CreditsScene — Scrolling credits for SEKAI: A 25-ji Metroidvania.
- *
- * Features:
- *   - Dark background with floating teal/purple particles (consistent with MenuScene)
- *   - "CREDITS" title fixed at top
- *   - Auto-scrolling credit text (bottom→top over 30s)
- *   - Gradient fade at top/bottom edges so text doesn't overlap title
- *   - J to skip scroll / J to return to menu after scroll completes
- *   - "THANK YOU FOR PLAYING" + blinking "PRESS J TO RETURN" at end
- *   - Fade transition back to MenuScene via SceneManager
- */
 class CreditsScene extends Phaser.Scene {
     constructor() {
         super('CreditsScene');
     }
 
-    /* ------------------------------------------------------------------ */
-    /*  Phaser lifecycle                                                   */
-    /* ------------------------------------------------------------------ */
-
     create() {
         this.canReturn = false;
         this.scrollComplete = false;
         this.particles = [];
+        this.speedMultiplier = 1;
 
         this._buildBackground();
         this._buildTitle();
         this._buildEndTexts();
         this._buildCredits();
         this._buildFadeEdges();
+        this._buildHint();
         this._createControls();
 
-        // BGM
-        this.bgm = this.sound.add('bgm_credits', { loop: true, volume: 0 });
+        this.bgm = AudioSettings.createBgm(this, 'bgm_credits', 0.30);
         this.bgm.play();
-        this.tweens.add({ targets: this.bgm, volume: 0.30, duration: 1000 });
+        this.tweens.add({ targets: this.bgm, volume: AudioSettings.scale('bgm', 0.30), duration: 1000 });
 
-        // Fade in on entry
         this.cameras.main.fadeIn(500);
     }
 
     update(time, delta) {
         this._updateParticles(delta);
-    }
 
-    /* ------------------------------------------------------------------ */
-    /*  Background: dark fill + grid lines + floating particles            */
-    /* ------------------------------------------------------------------ */
+        if (!this.scrollComplete) {
+            this.creditContainer.y -= 60 * this.speedMultiplier * (delta / 1000);
+            if (this.creditContainer.y <= this.finalScrollY) {
+                this.creditContainer.y = this.finalScrollY;
+                this._onScrollComplete();
+            }
+        }
+    }
 
     _buildBackground() {
         const bg = this.add.graphics().setDepth(0);
@@ -114,10 +102,6 @@ class CreditsScene extends Phaser.Scene {
         }
     }
 
-    /* ------------------------------------------------------------------ */
-    /*  Title                                                              */
-    /* ------------------------------------------------------------------ */
-
     _buildTitle() {
         this.add.text(this.scale.width / 2, 48, 'CREDITS', {
             fontSize: '32px',
@@ -129,10 +113,6 @@ class CreditsScene extends Phaser.Scene {
         deco.lineStyle(1, 0x2a6a9f, 0.3);
         deco.lineBetween(this.scale.width / 2 - 120, 78, this.scale.width / 2 + 120, 78);
     }
-
-    /* ------------------------------------------------------------------ */
-    /*  End texts (initially hidden, revealed after scroll completes)      */
-    /* ------------------------------------------------------------------ */
 
     _buildEndTexts() {
         this.endThankYou = this.add.text(this.scale.width / 2, 312, 'THANK YOU FOR PLAYING', {
@@ -147,10 +127,6 @@ class CreditsScene extends Phaser.Scene {
             color: '#4a6a9f',
         }).setOrigin(0.5).setDepth(10).setAlpha(0);
     }
-
-    /* ------------------------------------------------------------------ */
-    /*  Scrolling credits text                                             */
-    /* ------------------------------------------------------------------ */
 
     _buildCredits() {
         const creditData = [
@@ -210,34 +186,15 @@ class CreditsScene extends Phaser.Scene {
         });
 
         this.creditHeight = y;
-        const startY = this.scale.height + 20;
-        const endY = -(this.creditHeight + 80);
-        this.finalScrollY = endY;
-
-        this.creditContainer.y = startY;
-
-        // Auto-scroll over 30 seconds (slower)
-        this.scrollTween = this.tweens.add({
-            targets: this.creditContainer,
-            y: endY,
-            duration: 30000,
-            ease: 'Linear',
-            onComplete: () => {
-                this._onScrollComplete();
-            },
-        });
+        this.creditContainer.y = this.scale.height + 20;
+        this.finalScrollY = -(this.creditHeight + 80);
     }
-
-    /* ------------------------------------------------------------------ */
-    /*  Gradient fade edges (top + bottom)                                 */
-    /* ------------------------------------------------------------------ */
 
     _buildFadeEdges() {
         const w = this.scale.width;
         const h = this.scale.height;
         const fade = this.add.graphics().setDepth(15);
 
-        // Top fade: opaque at top → transparent at y=130
         const topFadeH = 130;
         const steps = 26;
         const stepH = topFadeH / steps;
@@ -247,7 +204,6 @@ class CreditsScene extends Phaser.Scene {
             fade.fillRect(0, i * stepH, w, stepH + 1);
         }
 
-        // Bottom fade: transparent at y=h-80 → opaque at bottom
         const botFadeH = 80;
         const botSteps = 16;
         const botStepH = botFadeH / botSteps;
@@ -258,9 +214,13 @@ class CreditsScene extends Phaser.Scene {
         }
     }
 
-    /* ------------------------------------------------------------------ */
-    /*  Scroll completion / skip handling                                  */
-    /* ------------------------------------------------------------------ */
+    _buildHint() {
+        this.add.text(this.scale.width - 16, this.scale.height - 16, 'J: Speed Up   K: Skip', {
+            fontSize: '13px',
+            fontFamily: 'monospace',
+            color: '#4a6a9f',
+        }).setOrigin(1, 1).setDepth(20).setAlpha(0.7);
+    }
 
     _onScrollComplete() {
         if (this.scrollComplete) return;
@@ -289,22 +249,29 @@ class CreditsScene extends Phaser.Scene {
     }
 
     _skipScroll() {
-        if (this.scrollTween) {
-            this.scrollTween.stop();
-            this.scrollTween = null;
-        }
         this.creditContainer.y = this.finalScrollY;
         this._onScrollComplete();
     }
 
-    /* ------------------------------------------------------------------ */
-    /*  Controls                                                           */
-    /* ------------------------------------------------------------------ */
-
     _createControls() {
         this.keyJ = this.input.keyboard.addKey('J');
+        this.keyK = this.input.keyboard.addKey('K');
 
         this.keyJ.on('down', () => {
+            if (this.canReturn) {
+                this._returnToMenu();
+            } else if (!this.scrollComplete) {
+                this.speedMultiplier = 5;
+            }
+        });
+
+        this.keyJ.on('up', () => {
+            if (!this.scrollComplete && !this.canReturn) {
+                this.speedMultiplier = 1;
+            }
+        });
+
+        this.keyK.on('down', () => {
             if (this.canReturn) {
                 this._returnToMenu();
             } else if (!this.scrollComplete) {

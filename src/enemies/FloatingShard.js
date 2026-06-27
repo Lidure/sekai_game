@@ -1,5 +1,5 @@
 /**
- * FloatingShard — Hover + Drift enemy with HOMING attack.
+ * FloatingShard — Hover + Drift enemy with CROSS BARRAGE attack.
  *
  * State machine:
  *   HOVER  → bobs at origin Y with sine wave, subtle idle drift
@@ -8,26 +8,30 @@
  *          → player within 120px for >1.5s → HOMING
  *          → player beyond 150px → RETURN
  *   HOMING → teal glow + spark particles + pulse scale (0.5s tell)
- *          → fire 1 homing projectile (80px/s, re-aims every 100ms, 3s life)
+ *          → fire 4 projectiles in a cross pattern (up/down/left/right)
+ *          → after 0.3s launch they curve toward the player
  *          → enter RETURN (2s cooldown)
  *   RETURN → drifts back to origin X
  *          → reaches origin → HOVER
  *
  * Projectile: teal circle (radius 5), slow-homing, 10 damage
+ *             Can be destroyed by player slash attacks
  *
- * Narrative: A broken piece of memory. It drifts just beyond reach,
- *            like a forgotten song.
+ * Narrative: A broken piece of memory. It scatters when threatened,
+ *            like thoughts you can't hold onto.
  */
 class FloatingShard extends Enemy {
     constructor(scene, x, y) {
         super(scene, x, y, {
             textureKey: 'enemy_shard',
             hp: 15,
-            contactDamage: 5,      // reduced from 8
+            contactDamage: 1,
             feelingsDrop: 5,
             bodyWidth: 24,
             bodyHeight: 34,
             noGravity: true,
+            leashDistance: 200,
+            returnSpeed: 40,
         });
 
         this.sprite.setScale(0.8);
@@ -110,14 +114,22 @@ class FloatingShard extends Enemy {
 
                 // ── Tell phase (stateTimer > 0) ──
                 if (this.stateTimer > 0) {
-                    // Teal glow and spark particles — set on entry, continue
+                    // Visual tells set on entry
                 }
                 // ── Fire phase (stateTimer crosses 0) ──
                 else if (!this._homingFired) {
                     this._homingFired = true;
                     this.sprite.clearTint();
-        this.sprite.setScale(1.1);
-                    this._fireHomingProjectile(playerX, playerY);
+                    this.sprite.setScale(0.8 * 1.15);
+                    this._fireCrossProjectiles(playerX, playerY);
+                }
+                // ── Wait 0.3s, then projectiles lock onto player ──
+                else if (!this._homingReleased) {
+                    this._homingLockTimer -= dtSec;
+                    if (this._homingLockTimer <= 0) {
+                        this._homingReleased = true;
+                        this._releaseProjectiles(playerX, playerY);
+                    }
                 }
                 // ── Done → RETURN ──
                 else {
@@ -147,6 +159,36 @@ class FloatingShard extends Enemy {
     }
 
     /* ================================================================== */
+    /*  Leash Hooks                                                          */
+    /* ================================================================== */
+
+    _onStartReturn() {
+        if (this.state === 'homing' && !this._homingFired) {
+            this.scene.tweens.killTweensOf(this.sprite);
+        }
+        // Release projectiles immediately on leash return (no wait)
+        if (this.state === 'homing' && this._homingFired && !this._homingReleased) {
+            this._homingReleased = true;
+            if (this.scene.player && !this.scene.player.dead) {
+                this._releaseProjectiles(this.scene.player.x, this.scene.player.y);
+            }
+        }
+        this.sprite.clearTint();
+        this.sprite.setScale(0.8);
+    }
+
+    _onReachedHome() {
+        this.state = 'hover';
+        this.driftTimer = 0;
+        this._homingFired = false;
+        this._homingReleased = false;
+        this._homingLockTimer = 0;
+        this.sprite.clearTint();
+        this.sprite.setScale(0.8);
+        this.body.setVelocity(0, 0);
+    }
+
+    /* ================================================================== */
     /*  HOMING TELEGRAPH + PROJECTILE FIRE                                    */
     /* ================================================================== */
 
@@ -154,6 +196,8 @@ class FloatingShard extends Enemy {
         this.state = 'homing';
         this.stateTimer = 0.5;       // 0.5s tell
         this._homingFired = false;
+        this._homingReleased = false;
+        this._homingLockTimer = 0.3; // 0.3s before projectiles lock
 
         // Stop horizontal movement
         this.body.setVelocityX(0);
@@ -199,29 +243,54 @@ class FloatingShard extends Enemy {
     }
 
     /**
-     * Fire a single homing projectile with continuous re-aiming.
+     * Fire 4 projectiles in a cross pattern around the enemy.
+     * Each projectile drifts outward slowly, then locks onto the player
+     * after 0.3s via _releaseProjectiles.
      */
-    _fireHomingProjectile(targetX, targetY) {
-        const p = this.scene.add.circle(this.x, this.y, 5, 0x66ffff, 1)
-            .setDepth(10);
-        this.scene.physics.add.existing(p);
-        p.body.setAllowGravity(false);
-        p.body.setCircle(5);
-        p._damage = 10;
-        p._age = 0;
-        p._maxLifetime = 3;
-        p._homingTimer = 0;
+    _fireCrossProjectiles(targetX, targetY) {
+        const angles = [0, Math.PI / 2, Math.PI, -Math.PI / 2]; // right, down, left, up
+        const spreadSpeed = 40;
 
-        // Initial velocity toward target
-        const angle = Math.atan2(targetY - this.y, targetX - this.x);
-        p.body.setVelocity(
-            Math.cos(angle) * 80,
-            Math.sin(angle) * 80,
-        );
+        for (const angle of angles) {
+            const p = this.scene.add.circle(this.x, this.y, 5, 0x66ffff, 1)
+                .setDepth(10);
+            this.scene.physics.add.existing(p);
+            p.body.setAllowGravity(false);
+            p.body.setCircle(5);
+            p._damage = 1;
+            p._age = 0;
+            p._maxLifetime = 4;
+            p._isHoming = false;
+            p._canBeSlashDestroyed = true;
 
-        this._projectiles.push(p);
+            // Initial outward drift
+            p.body.setVelocity(
+                Math.cos(angle) * spreadSpeed,
+                Math.sin(angle) * spreadSpeed,
+            );
+
+            this._projectiles.push(p);
+        }
 
         this.scene.sound.play('sfx_enemy_attack', { volume: 0.5, detune: -100 });
+    }
+
+    /**
+     * After the lock timer expires, all active projectiles
+     * lock toward the player and begin homing.
+     */
+    _releaseProjectiles(targetX, targetY) {
+        for (const p of this._projectiles) {
+            if (!p || !p.active) continue;
+            p._isHoming = true;
+            const angle = Math.atan2(targetY - p.y, targetX - p.x);
+            p.body.setVelocity(
+                Math.cos(angle) * 90,
+                Math.sin(angle) * 90,
+            );
+        }
+
+        this.scene.sound.play('sfx_enemy_attack', { volume: 0.5, detune: 50 });
     }
 
     /* ================================================================== */
@@ -238,20 +307,29 @@ class FloatingShard extends Enemy {
                 continue;
             }
 
+            // ── Destroy if outside room bounds ──
+            const b = this.scene.physics.world.bounds;
+            if (p.x < b.x - 20 || p.x > b.right + 20 || p.y < b.y - 20 || p.y > b.bottom + 20) {
+                this._destroyProjectile(p, i);
+                continue;
+            }
+
             p._age += dtSec;
 
-            // ── Homing: re-aim toward player every 100ms ──
-            p._homingTimer += dtSec;
-            if (p._homingTimer > 0.1) {
-                p._homingTimer = 0;
-                // Only re-aim while player is alive
+            // ── Homing: only if _isHoming is true (after release phase) ──
+            if (p._isHoming) {
                 if (this.scene.player && !this.scene.player.dead) {
                     const angle = Math.atan2(playerY - p.y, playerX - p.x);
                     p.body.setVelocity(
-                        Math.cos(angle) * 80,
-                        Math.sin(angle) * 80,
+                        Math.cos(angle) * 90,
+                        Math.sin(angle) * 90,
                     );
                 }
+            }
+
+            // ── Slash destruction (check player attack hitbox overlap) ──
+            if (p._canBeSlashDestroyed && this.scene.player && !this.scene.player.dead) {
+                this._checkSlashCollision(p, i);
             }
 
             // ── Lifetime check ──
@@ -271,13 +349,46 @@ class FloatingShard extends Enemy {
             if (this.scene.player && !this.scene.player.dead) {
                 const dx = playerX - p.x;
                 const dy = playerY - p.y;
-                const distSq = dx * dx + dy * dy;
-                if (distSq < 625) { // 25px radius squared (slightly bigger for homing)
+                if (dx * dx + dy * dy < 625) {
                     this.scene.player.takeDamage(p._damage, 80, -40);
-                    if (p && p.active) p.destroy();
-                    this._projectiles.splice(i, 1);
+                    this._destroyProjectile(p, i);
                 }
             }
+        }
+    }
+
+    /**
+     * Check if the player's slash hitbox overlaps this projectile.
+     */
+    _checkSlashCollision(p, index) {
+        const player = this.scene.player;
+        if (!player.slashHitbox || !player.slashHitbox.active) return;
+
+        const sb = player.slashHitbox.getBounds();
+        if (Phaser.Geom.Intersects.RectangleToRectangle(sb, p.getBounds())) {
+            // Destroy projectile with a small particle burst
+            for (let j = 0; j < 4; j++) {
+                const spark = this.scene.add.circle(
+                    p.x, p.y, 2, 0x66ffff, 0.8,
+                ).setDepth(50);
+                this.scene.tweens.add({
+                    targets: spark,
+                    x: spark.x + Phaser.Math.Between(-20, 20),
+                    y: spark.y + Phaser.Math.Between(-20, 20),
+                    alpha: 0,
+                    duration: 200,
+                    onComplete: () => { if (spark && spark.active) spark.destroy(); },
+                });
+            }
+            this.scene.sound.play('sfx_enemy_hurt', { volume: 0.3, detune: 300 });
+            this._destroyProjectile(p, index);
+        }
+    }
+
+    _destroyProjectile(p, index) {
+        if (p && p.active) p.destroy();
+        if (index >= 0 && index < this._projectiles.length) {
+            this._projectiles.splice(index, 1);
         }
     }
 

@@ -49,6 +49,12 @@ class PauseMenu {
             .setDepth(199)
             .setVisible(false);
 
+        this._fullscreenChangeHandler = () => {
+            this._updateFSIndicator();
+        };
+        document.addEventListener('fullscreenchange', this._fullscreenChangeHandler);
+        document.addEventListener('webkitfullscreenchange', this._fullscreenChangeHandler);
+
         // Build all visual elements
         this._build();
 
@@ -76,10 +82,10 @@ class PauseMenu {
 
         // Panel dimensions
         const pW = 384;
-        const pH = 336;
-        const px = (W - pW) / 2;     // 240
-        const py = (H - pH) / 2 - 10; // 150
-        const cx = W / 2;            // 400 (screen centre, also panel centre)
+        const pH = 378;
+        const px = (W - pW) / 2;
+        const py = (H - pH) / 2 - 10;
+        const cx = W / 2;
 
         this._panelRect = { px, py, pW, pH };
 
@@ -127,7 +133,7 @@ class PauseMenu {
         });
 
         /* ---- Title ---- */
-        const titleStr = '\u25C6 PAUSED \u25C6';
+        const titleStr = Lang.t('pauseTitle');
         this.titleText = this.scene.add.text(cx, py + 35, titleStr, {
             fontSize: '28px',
             fontFamily: 'monospace',
@@ -157,12 +163,14 @@ class PauseMenu {
 
         /* ---- Menu items ---- */
         const itemDefs = [
-            { label: 'RESUME',         action: 'resume' },
-            { label: 'SAVE',           action: 'save' },
-            { label: 'RETURN TO MENU', action: 'mainMenu' },
-            { label: 'FULLSCREEN',     action: 'fullscreen' },
-            { label: 'VOICE',          action: null },    // slider handled separately
+            { labelKey: 'resume',        action: 'resume' },
+            { labelKey: 'save',          action: 'save' },
+            { labelKey: 'returnToMenu',  action: 'mainMenu' },
+            { labelKey: 'fullscreen',    action: 'fullscreen' },
+            { labelKey: 'language',      action: 'language' },
+            { labelKey: 'master',        action: null },    // slider handled separately
         ];
+        this._itemDefs = itemDefs;
 
         this.items = [];
         this.itemTexts = [];
@@ -191,7 +199,7 @@ class PauseMenu {
             sub.add(caret);
 
             // Label
-            const txt = this.scene.add.text(itemX, 0, def.label, {
+            const txt = this.scene.add.text(itemX, 0, Lang.t(def.labelKey), {
                 fontSize: '16px',
                 fontFamily: 'monospace',
                 color: '#c8d8ff',
@@ -200,14 +208,17 @@ class PauseMenu {
             this.itemTexts.push(txt);
 
             if (def.action !== null) {
-                txt.setInteractive({ useHandCursor: true });
-                txt.on('pointerover', () => {
+                const zone = this.scene.add.zone(cx, 0, pW - 28, 34)
+                    .setScrollFactor(0)
+                    .setInteractive({ useHandCursor: true });
+                sub.add(zone);
+                zone.on('pointerover', () => {
                     if (!this._canInteract() || this.confirmMode) return;
                     this.selectedIndex = i;
                     this._updateSelection();
                     this._updateHelpText();
                 });
-                txt.on('pointerup', (pointer) => {
+                zone.on('pointerup', (pointer) => {
                     if (!this._canInteract() || this.confirmMode) return;
                     if (pointer.button !== 0) return;
                     this.selectedIndex = i;
@@ -217,7 +228,7 @@ class PauseMenu {
                 });
             }
 
-            this.items.push({ sub, caret, text: txt, action: def.action, label: def.label, y });
+            this.items.push({ sub, caret, text: txt, action: def.action, labelKey: def.labelKey, y });
         });
 
         /* ---- Fullscreen indicator ---- */
@@ -229,8 +240,16 @@ class PauseMenu {
         }).setOrigin(1, 0.5);
         this.container.add(this.fsText);
 
-        /* ---- Volume slider ---- */
-        this._buildSlider(cx, startY + 4 * gap);
+        /* ---- Language indicator ---- */
+        this.langText = this.scene.add.text(px + pW - 20, startY + 4 * gap, '', {
+            fontSize: '14px',
+            fontFamily: 'monospace',
+            color: '#7FE0DE',
+        }).setOrigin(1, 0.5);
+        this.container.add(this.langText);
+
+        /* ---- Master volume slider ---- */
+        this._buildSlider(cx, startY + 5 * gap);
 
         /* ---- Confirmation dialog (hidden until triggered) ---- */
         this._buildConfirmation();
@@ -278,9 +297,7 @@ class PauseMenu {
         const g = this.sliderGfx;
         g.clear();
 
-        const vol = typeof this.scene.sound.volume === 'number'
-            ? this.scene.sound.volume
-            : 1;
+        const vol = AudioSettings.get('master');
 
         const { barW, barH, barX, barY } = this._sliderCfg;
         const fillW = barW * vol;
@@ -342,7 +359,7 @@ class PauseMenu {
         this.confirmGroup.add(popup);
 
         // Title text
-        const confirmTitle = this.scene.add.text(pcx, popY + 26, 'RETURN TO MENU?', {
+        const confirmTitle = this.scene.add.text(pcx, popY + 26, Lang.t('returnToMenuQ'), {
             fontSize: '15px',
             fontFamily: 'monospace',
             color: '#a8d8ff',
@@ -357,7 +374,7 @@ class PauseMenu {
 
         // CANCEL / CONFIRM labels
         this.confirmTexts = [];
-        const cLabels = ['CANCEL', 'CONFIRM'];
+        const cLabels = [Lang.t('cancel'), Lang.t('confirm')];
         cLabels.forEach((label, i) => {
             const x = pcx - 38 + i * 76;
             const txt = this.scene.add.text(x, popY + 66, label, {
@@ -368,13 +385,16 @@ class PauseMenu {
             this.confirmGroup.add(txt);
             this.confirmTexts.push(txt);
 
-            txt.setInteractive({ useHandCursor: true });
-            txt.on('pointerover', () => {
+            const confirmZone = this.scene.add.zone(x, popY + 66, 56, 24)
+                .setScrollFactor(0)
+                .setInteractive({ useHandCursor: true });
+            this.confirmGroup.add(confirmZone);
+            confirmZone.on('pointerover', () => {
                 if (!this._canInteract() || !this.confirmMode) return;
                 this.confirmChoice = i;
                 this._updateConfirmGlow();
             });
-            txt.on('pointerup', (pointer) => {
+            confirmZone.on('pointerup', (pointer) => {
                 if (!this._canInteract() || !this.confirmMode) return;
                 if (pointer.button !== 0) return;
                 this.confirmChoice = i;
@@ -417,19 +437,51 @@ class PauseMenu {
             if (event) event.preventDefault();
         };
 
+        this._cancelHandler = (event) => {
+            if (this.destroyed) return;
+            if (this.savePicker && !this.savePicker.destroyed) {
+                this.savePicker._cancel();
+                this.savePicker = null;
+                if (event) event.preventDefault();
+                return;
+            }
+            if (this.isOpen && this.inputEnabled && !this.confirmMode && this.selectedIndex === 5) {
+                this._adjustVolume(-0.05);
+                if (event) event.preventDefault();
+                return;
+            }
+            if (this.confirmMode) {
+                this._closeConfirm();
+                if (event) event.preventDefault();
+                return;
+            }
+            if (this.isOpen) {
+                this._close();
+                if (event) event.preventDefault();
+            }
+        };
+
         this.scene.input.keyboard.on('keydown-ESC', this._toggleHandler);
         this.scene.input.keyboard.on('keydown-P', this._toggleHandler);
+        this.scene.input.keyboard.on('keydown-K', this._cancelHandler);
 
         // Navigation
         this._navigateUp = () => { if (this._canInteract()) this._navigate(-1); };
         this._navigateDown = () => { if (this._canInteract()) this._navigate(1); };
 
-        // Volume adjustment (only when VOICE is selected)
+        // Volume adjustment (only when MASTER is selected)
         this._adjustLeft = () => { if (this._canInteract()) this._adjustVolume(-0.05); };
         this._adjustRight = () => { if (this._canInteract()) this._adjustVolume(0.05); };
 
         // Confirm / execute
-        this._confirmAction = () => { if (this._canInteract()) this._confirm(); };
+        this._confirmAction = () => {
+            if (!this._canInteract()) return;
+            if (!this.confirmMode && this.selectedIndex === 5) {
+                this._adjustVolume(0.05);
+                return;
+            }
+            this._confirm();
+        };
 
         this.scene.input.keyboard.on('keydown-UP', this._navigateUp);
         this.scene.input.keyboard.on('keydown-W', this._navigateUp);
@@ -463,6 +515,7 @@ class PauseMenu {
         this.inputEnabled = false;
 
         this._savedZoom = this.scene.cameras.main.zoom;
+        this._savedScroll = { x: this.scene.cameras.main.scrollX, y: this.scene.cameras.main.scrollY };
         this.selectedIndex = 0;
         this.confirmMode = false;
 
@@ -472,6 +525,7 @@ class PauseMenu {
 
         // Change to menu-friendly zoom while dark overlay hides the transition
         this.scene.cameras.main.setZoom(1);
+        this.scene.cameras.main.setScroll(0, 0);
 
         // Pause game world
         if (this.scene.physics && this.scene.physics.world) {
@@ -519,10 +573,14 @@ class PauseMenu {
 
         this.confirmGroup.setVisible(false);
 
-        // Restore zoom instantly
+        // Restore zoom and scroll instantly
         if (this._savedZoom !== undefined) {
             this.scene.cameras.main.setZoom(this._savedZoom);
             this._savedZoom = undefined;
+        }
+        if (this._savedScroll) {
+            this.scene.cameras.main.setScroll(this._savedScroll.x, this._savedScroll.y);
+            this._savedScroll = undefined;
         }
 
         // Hide overlay immediately — no fade to avoid zoom/position flash
@@ -655,11 +713,10 @@ class PauseMenu {
     /* ================================================================== */
 
     _updateHelpText() {
-        if (this.selectedIndex === 4) {
-            // VOICE selected — show adjustment hint
-            this.helpText.setText('\u2190\u2192 Adjust Volume  |  ESC Close');
+        if (this.selectedIndex === 5) {
+            this.helpText.setText(Lang.t('helpPauseMaster'));
         } else {
-            this.helpText.setText('\u2191\u2193 Navigate  |  J / SPACE Confirm  |  ESC Close');
+            this.helpText.setText(Lang.t('helpNav'));
         }
     }
 
@@ -702,6 +759,41 @@ class PauseMenu {
             case 'fullscreen':
                 this._toggleFullscreen();
                 break;
+            case 'language':
+                this._toggleLanguage();
+                break;
+        }
+    }
+
+    /* ================================================================== */
+    /*  LANGUAGE TOGGLE                                                     */
+    /* ================================================================== */
+
+    _toggleLanguage() {
+        Lang.toggle();
+        this._reapplyLabels();
+    }
+
+    _reapplyLabels() {
+        this.titleText.setText(Lang.t('pauseTitle'));
+        this.items.forEach((item, i) => {
+            const def = this._itemDefs[i];
+            if (def) item.text.setText(Lang.t(def.labelKey));
+        });
+        this.fsText.setText(this._fsIndicator());
+        this.langText.setText(this._langIndicator());
+        this._updateHelpText();
+        this._updateConfirmLabels();
+    }
+
+    _langIndicator() {
+        return Lang.getCode() === 'cn' ? '[CN]' : '[EN]';
+    }
+
+    _updateConfirmLabels() {
+        if (this.confirmTexts && this.confirmTexts.length >= 2) {
+            this.confirmTexts[0].setText(Lang.t('cancel'));
+            this.confirmTexts[1].setText(Lang.t('confirm'));
         }
     }
 
@@ -736,7 +828,7 @@ class PauseMenu {
         if (this._saveText) this._saveText.destroy();
         this._saveText = this.scene.add.text(
             this.scene.scale.width / 2, 200,
-            '\u2605 SAVED \u2605',
+            Lang.t('saved'),
             {
                 fontSize: '16px',
                 fontFamily: 'monospace',
@@ -776,7 +868,7 @@ class PauseMenu {
         this._updateConfirmGlow();
 
         // Update help text
-        this.helpText.setText('\u2190\u2192 Select  |  J / SPACE Confirm  |  ESC Cancel');
+        this.helpText.setText(Lang.t('helpConfirm'));
     }
 
     _closeConfirm() {
@@ -797,44 +889,46 @@ class PauseMenu {
     _adjustVolume(delta) {
         if (!this.inputEnabled) return;
 
-        // Only respond when VOICE (index 3) is selected and we're not in confirm mode
-        if (this.selectedIndex !== 4 || this.confirmMode) return;
+        // Only respond when MASTER (index 5) is selected and we're not in confirm mode
+        if (this.selectedIndex !== 5 || this.confirmMode) return;
 
-        const current = typeof this.scene.sound.volume === 'number'
-            ? this.scene.sound.volume
-            : 1;
-
-        this.scene.sound.volume = Phaser.Math.Clamp(current + delta, 0, 1);
+        AudioSettings.set('master', AudioSettings.get('master') + delta);
         this._drawSlider();
         this._tryPlaySound('sfx_ui_navigate', 0.12);
     }
 
     /** Toggle fullscreen mode. */
     _toggleFullscreen() {
-        const fs = document.fullscreenElement || document.webkitFullscreenElement;
+        const fs = document.fullscreenElement || document.webkitFullscreenElement || this.scene.scale.isFullscreen;
         if (!fs) {
             const el = document.documentElement;
-            if (el.requestFullscreen) {
-                el.requestFullscreen();
-            } else if (el.webkitRequestFullscreen) {
-                el.webkitRequestFullscreen();
+            const request = el.requestFullscreen ? el.requestFullscreen() :
+                (el.webkitRequestFullscreen ? el.webkitRequestFullscreen() : null);
+            if (request && typeof request.then === 'function') {
+                request.then(() => this._updateFSIndicator()).catch(() => this._updateFSIndicator());
             }
         } else {
-            if (document.exitFullscreen) {
-                document.exitFullscreen();
-            } else if (document.webkitExitFullscreen) {
-                document.webkitExitFullscreen();
+            const exit = document.exitFullscreen ? document.exitFullscreen() :
+                (document.webkitExitFullscreen ? document.webkitExitFullscreen() : null);
+            if (exit && typeof exit.then === 'function') {
+                exit.then(() => this._updateFSIndicator()).catch(() => this._updateFSIndicator());
             }
         }
+        this.scene.time.delayedCall(50, () => this._updateFSIndicator());
         this._updateFSIndicator();
     }
 
     /** Update the [ON] / [OFF] indicator next to FULLSCREEN. */
     _updateFSIndicator() {
         if (!this.fsText) return;
-        const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
-        this.fsText.setText(isFs ? '[ON]' : '[OFF]');
+        const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement || this.scene.scale.isFullscreen);
+        this.fsText.setText(isFs ? Lang.t('on') : Lang.t('off'));
         this.fsText.setColor(isFs ? '#7FE0DE' : '#4a6a9f');
+    }
+
+    _fsIndicator() {
+        const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement || this.scene.scale.isFullscreen);
+        return isFs ? Lang.t('on') : Lang.t('off');
     }
 
     /**
@@ -932,6 +1026,7 @@ class PauseMenu {
         if (kb) {
             kb.off('keydown-ESC', this._toggleHandler);
             kb.off('keydown-P', this._toggleHandler);
+            kb.off('keydown-K', this._cancelHandler);
             kb.off('keydown-UP', this._navigateUp);
             kb.off('keydown-W', this._navigateUp);
             kb.off('keydown-DOWN', this._navigateDown);
@@ -949,6 +1044,12 @@ class PauseMenu {
         if (this.container) {
             this.container.destroy(true);
             this.container = null;
+        }
+
+        if (this._fullscreenChangeHandler) {
+            document.removeEventListener('fullscreenchange', this._fullscreenChangeHandler);
+            document.removeEventListener('webkitfullscreenchange', this._fullscreenChangeHandler);
+            this._fullscreenChangeHandler = null;
         }
 
         // Null out references

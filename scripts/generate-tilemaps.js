@@ -17,8 +17,6 @@ const GROUND_OFFSET_Y = -8; // ground layer offset (half tile lower)
 const GAME_WIDTH = 1280;
 const BASE_WIDTH = 960;
 const scaleX = GAME_WIDTH / BASE_WIDTH;
-const GROUND_SURFACE_Y = 672;
-const GROUND_ROW = Math.round((GROUND_SURFACE_Y + Math.abs(ROOM_OFFSET_Y)) / TILE_SIZE);
 const TILES_PER_UNIT = Math.round(64 / TILE_SIZE); // floor tile fill density
 
 // ── Room definitions (from RoomDef.ROOMS) ──
@@ -42,10 +40,15 @@ const ROOMS = {
     tint: { color: 0x0a0a1a, alpha: 0.25 },
     exits: [{ x: 954, y: 624, w: 10, h: 60, dir: 'right', targetRoom: 'ascent', targetX: 48, targetY: 660 }],
     ground: [{ x: 0, w: 15 }],
-    platforms: [],  // Flat ground, teach movement first
-    enemies: [{ id: 'intro_0', type: 'shadow', x: 540, y: 636 }],
+    platforms: [
+      // Tutorial platforms — teach jumping without requiring it for progression
+      { x: 144, y: 664, w: 0.75 },  // T=41  surface 640  step up from ground
+      { x: 252, y: 632, w: 0.50 },  // T=39  surface 608  health orb platform
+      { x: 576, y: 664, w: 0.50 },  // T=41  surface 640  combat platform above bloated
+    ],
+    enemies: [{ id: 'intro_0', type: 'bloated', x: 540, y: 636 }],
     collectibles: [{ type: 'health', saveId: 'health_1', x: 600, y: 600, value: 30, persistent: false }],
-    benches: [], npcs: [], abilityItems: [], abilityGates: [], oneWayDoors: [], bossTrigger: false,
+    benches: [], npcs: [], abilityItems: [], abilityGates: [], oneWayDoors: [], destructibleWalls: [], bossTrigger: false,
     decorations: {},
     mapGrid: { x: 0, y: 1 },
   },
@@ -65,21 +68,32 @@ const ROOMS = {
     ],
     ground: [{ x: 0, w: 15 }],
     platforms: [
-      // TileRow  T= row  top    p.y = T*16+8  x=col*12  gap from prev
-      { x: 96, y: 664, w: 1 },   // T=41  top=640  —  32px from ground
-      { x: 120, y: 632, w: 1 },  // T=39  top=608  ✓ 32px step
-      { x: 144, y: 600, w: 1 },  // T=37  top=576  ✓ 32px
-      { x: 168, y: 568, w: 1 },  // T=35  top=544  ✓ 32px
-      { x: 192, y: 536, w: 1 },  // T=33  top=512  ✓ 32px
-      { x: 216, y: 504, w: 1 },  // T=31  top=480  ✓ 32px
-      { x: 240, y: 472, w: 1 },  // T=29  top=448  ✓ 32px
-      { x: 264, y: 440, w: 1 },  // T=27  top=416  ✓ 32px
+      // Main staircase: 5 steps + landing + 2 descent (≤5 consecutive ✓)
+      { x: 96,  y: 664, w: 0.75 },  // T=41  surface 640  step 1
+      { x: 144, y: 632, w: 0.75 },  // T=39  surface 608  step 2
+      { x: 192, y: 600, w: 0.75 },  // T=37  surface 576  step 3
+      { x: 240, y: 568, w: 0.75 },  // T=35  surface 544  step 4
+      { x: 288, y: 536, w: 0.75 },  // T=33  surface 512  step 5
+
+      // Wide landing (break after 5)
+      { x: 396, y: 536, w: 1.00 },  // T=33  surface 512
+
+      // Rightward descent back to ground
+      { x: 504, y: 568, w: 0.75 },  // T=35  surface 544  step down
+      { x: 600, y: 600, w: 0.75 },  // T=37  surface 576  step down
+
+      // Upper secret path (64px above landing, requires max jump)
+      { x: 420, y: 472, w: 0.50 },  // T=29  surface 448  64px up from landing
+      { x: 528, y: 440, w: 0.50 },  // T=27  surface 416  health orb here
     ],
     enemies: [
       { id: 'sf_1', type: 'shadow', x: 360, y: 636 },
       { id: 'bat_0', type: 'bat', x: 720, y: 360, noGravity: true },
     ],
-    collectibles: [{ type: 'health', saveId: 'health_2', x: 480, y: 600, value: 30, persistent: false }],
+    collectibles: [
+      { type: 'health', saveId: 'health_2', x: 480, y: 600, value: 30, persistent: false },
+      { type: 'health', saveId: 'health_8', x: 360, y: 360, value: 30, persistent: false },
+    ],
     benches: [],
     npcs: [{
       x: 120, y: 660, name: '???', hairColor: 0x4A4A6A,
@@ -89,7 +103,7 @@ const ROOMS = {
         "You're looking for her too, aren't you?",
       ],
     }],
-    abilityItems: [], abilityGates: [], oneWayDoors: [], bossTrigger: false,
+    abilityItems: [], abilityGates: [], oneWayDoors: [], destructibleWalls: [], bossTrigger: false,
     decorations: {},
     mapGrid: { x: 1, y: 1 },
   },
@@ -108,67 +122,76 @@ const ROOMS = {
     ],
     ground: [{ x: 0, w: 15 }],
     platforms: [
-      // TileRow  T= row  top    p.y = T*16+8  x=col*12  gap
-      { x: 192, y: 664, w: 0.75 },  // T=41  top=640   left    32px from ground
-      { x: 264, y: 616, w: 0.75 },  // T=38  top=592   right   ✓ 48px
-      { x: 192, y: 568, w: 0.75 },  // T=35  top=544   left    ✓ 48px (zigzag)
-      { x: 288, y: 520, w: 0.75 },  // T=32  top=496   right   ✓ 48px
-      { x: 216, y: 472, w: 0.75 },  // T=29  top=448   left    ✓ 48px
-      { x: 336, y: 424, w: 0.75 },  // T=26  top=400   right   ✓ 48px
-      { x: 264, y: 376, w: 0.75 },  // T=23  top=352   left    ✓ 48px
-      { x: 360, y: 328, w: 0.75 },  // T=20  top=304   right   ✓ 48px
-      { x: 288, y: 280, w: 0.75 },  // T=17  top=256   left    ✓ 48px
-      { x: 384, y: 232, w: 0.75 },  // T=14  top=208   right   ✓ 48px
-      { x: 312, y: 184, w: 0.75 },  // T=11  top=160   left    ✓ 48px
+      // Full-height zigzag climb (T=41→T=11, 48px steps)
+      { x: 192, y: 664, w: 0.75 },  // T=41  surface 640  left
+      { x: 264, y: 616, w: 0.75 },  // T=38  surface 592  right  ✓ 48px
+      { x: 192, y: 568, w: 0.75 },  // T=35  surface 544  left   ✓ 48px
+      { x: 288, y: 520, w: 0.75 },  // T=32  surface 496  right  ✓ 48px
+      { x: 216, y: 472, w: 0.75 },  // T=29  surface 448  left   ✓ 48px
+      { x: 336, y: 424, w: 0.75 },  // T=26  surface 400  right  ✓ 48px
+      { x: 264, y: 376, w: 0.75 },  // T=23  surface 352  left   ✓ 48px
+      { x: 360, y: 328, w: 0.75 },  // T=20  surface 304  right  ✓ 48px
+      { x: 288, y: 280, w: 0.75 },  // T=17  surface 256  left   ✓ 48px
+      { x: 384, y: 232, w: 0.75 },  // T=14  surface 208  right  ✓ 48px
+      { x: 312, y: 184, w: 0.75 },  // T=11  surface 160  left   ✓ 48px
     ],
     enemies: [
       { id: 'fl_1', type: 'floating', x: 480, y: 156, noGravity: true },
       { id: 'fl_2', type: 'floating', x: 720, y: 120, noGravity: true },
+      { id: 'cr_0', type: 'crystal', x: 192, y: 160, noGravity: true },
     ],
     collectibles: [
       { type: 'hp_up', saveId: 'hp_1', x: 806, y: 168, value: 10 },
       { type: 'feelings_up', saveId: 'feel_2', x: 600, y: 204, value: 50 },
     ],
-    benches: [], npcs: [], abilityItems: [], abilityGates: [], oneWayDoors: [], bossTrigger: false,
+    benches: [], npcs: [], abilityItems: [], abilityGates: [], oneWayDoors: [], destructibleWalls: [], bossTrigger: false,
     decorations: {},
     mapGrid: { x: 1, y: 0 },
   },
 
   // ── LOWER (no abilities yet) ──
   // Ground-level room, platform staircase from left to right.
-  // 10 platforms, Δ2 rows (32px) per step climbing, then runway at T=30 across room.
-  // w=0.75 (3 tiles) for stairs, w=0.5 for final right platform.
-  // OneWayDoor at x=720 traps player on right side after crossing.
-  // Health collectible at (840, 480) — reachable from runway.
+  // 9 platforms: 5-step staircase → runway → destructible wall blocks passage
+  // Wall at x=760 is the ONLY path to right exit (mid).
+  // Health orb at (840, 480) — reachable after breaking wall.
   lower: {
     id: 'lower', name: 'LOWER PATH', width: 960, height: 720,
     groundTexture: 'ground_lower',
     tint: { color: 0x1a0a1a, alpha: 0.25 },
     exits: [
       { x: 0, y: 624, w: 10, h: 60, dir: 'left', targetRoom: 'ascent', targetX: 912, targetY: 660 },
-      { x: 954, y: 624, w: 10, h: 60, dir: 'right', targetRoom: 'mid', targetX: 48, targetY: 660 },
+      { x: 840, y: 460, w: 10, h: 40, dir: 'right', targetRoom: 'mid', targetX: 48, targetY: 660 },
     ],
     ground: [{ x: 0, w: 15 }],
     platforms: [
-      // TileRow  top    p.y        x=col*12   w    gap from prev
-      { x: 192, y: 664, w: 0.75 },  // T=41  top=640    col 16    32px from ground
-      { x: 216, y: 632, w: 0.75 },  // T=39  top=608    col 18    ✓ 32px
-      { x: 240, y: 600, w: 0.75 },  // T=37  top=576    col 20    ✓ 32px
-      { x: 264, y: 568, w: 0.75 },  // T=35  top=544    col 22    ✓ 32px
-      { x: 288, y: 536, w: 0.75 },  // T=33  top=512    col 24    ✓ 32px
-      { x: 312, y: 504, w: 0.75 },  // T=31  top=480    col 26    ✓ 32px
-      { x: 432, y: 488, w: 0.75 },  // T=30  top=464    col 36    runway right
-      { x: 576, y: 488, w: 0.75 },  // T=30  top=464    col 48    runway right
-      { x: 696, y: 488, w: 0.5 },   // T=30  top=464    col 58    runway bridge
-      { x: 816, y: 488, w: 0.5 },   // T=30  top=464    col 68    final, under health orb
+      // Main staircase: 5 steps (≤5 ✓), 32px each
+      { x: 144, y: 664, w: 0.75 },  // T=41  surface 640  step 1
+      { x: 192, y: 632, w: 0.75 },  // T=39  surface 608  step 2
+      { x: 240, y: 600, w: 0.75 },  // T=37  surface 576  step 3
+      { x: 288, y: 568, w: 0.75 },  // T=35  surface 544  step 4
+      { x: 336, y: 536, w: 0.75 },  // T=33  surface 512  step 5
+
+      // Runway at T=31 (surface 480), carries right to breakable wall
+      { x: 432, y: 504, w: 0.75 },  // T=31  surface 480  runway start
+      { x: 552, y: 504, w: 0.75 },  // T=31  surface 480  runway mid
+      { x: 672, y: 504, w: 1.50 },  // T=31  surface 480  before wall (6 cols, flush with wall left)
+      { x: 816, y: 504, w: 0.50 },  // T=31  surface 480  after wall (32px gap)
+
+      // hp_up alcove — visible above runway, optional skill-check reward
+      { x: 432, y: 472, w: 0.50 },  // T=29  surface 448  hp_up platform
     ],
     enemies: [
       { id: 'sf_2', type: 'shadow', x: 600, y: 636 },
       { id: 'sf_3', type: 'shadow', x: 780, y: 636 },
+      { id: 'sk_1', type: 'skeleton', x: 360, y: 636 },
     ],
-    collectibles: [{ type: 'health', saveId: 'health_3', x: 840, y: 480, value: 30, persistent: false }],
+    collectibles: [
+      { type: 'health', saveId: 'health_3', x: 840, y: 480, value: 30, persistent: false },
+      { type: 'hp_up', saveId: 'hp_4', x: 456, y: 456, value: 10 },
+    ],
     benches: [], npcs: [], abilityItems: [], abilityGates: [],
-    oneWayDoors: [{ x: 720, h: 340, y: 468 }],
+    oneWayDoors: [],
+    destructibleWalls: [{ x: 768, y: 448, w: 48, h: 80, maxHp: 6 }],
     bossTrigger: false,
     decorations: {},
     mapGrid: { x: 2, y: 1 },
@@ -185,47 +208,44 @@ const ROOMS = {
     exits: [
       { x: 0, y: 624, w: 12, h: 60, dir: 'left', targetRoom: 'lower', targetX: 893, targetY: 660 },
       { x: 946, y: 624, w: 12, h: 60, dir: 'right', targetRoom: 'preboss', targetX: 67, targetY: 660 },
-      { x: 600, y: 0, w: 60, h: 10, dir: 'up', targetRoom: 'shaft', targetX: 480, targetY: 708 },
+      { x: 600, y: 0, w: 60, h: 10, dir: 'up', targetRoom: 'shaft', targetX: 60, targetY: 708 },
     ],
     ground: [{ x: 0, w: 15 }],
     platforms: [
-      // Left staircase: ground→dash (48px steps)
-      { x: 168, y: 664, w: 0.75 },  // T=41  top=640   col 14   32px from ground
-      { x: 192, y: 616, w: 0.75 },  // T=38  top=592   col 16   ✓ 48px
-      { x: 216, y: 568, w: 0.75 },  // T=35  top=544   col 18   ✓ 48px
-      { x: 240, y: 520, w: 0.75 },  // T=32  top=496   col 20   ✓ 48px  (dash 18px above)
+      // Left staircase: ground→dash (48px steps, ≤4 consecutive ✓)
+      { x: 168, y: 664, w: 0.75 },  // T=41  surface 640  step 1
+      { x: 192, y: 616, w: 0.75 },  // T=38  surface 592  step 2
+      { x: 216, y: 568, w: 0.75 },  // T=35  surface 544  step 3
+      { x: 240, y: 520, w: 0.75 },  // T=32  surface 496  step 4  (dash at x=240, y=514)
 
       // Cross path: left→right (gradual descent)
-      { x: 360, y: 488, w: 0.75 },  // T=30  top=464   col 30   drop 32px from T=32
-      { x: 480, y: 456, w: 0.75 },  // T=28  top=448   col 40   drop 16px
+      { x: 360, y: 488, w: 0.75 },  // T=30  surface 464  32px drop
+      { x: 480, y: 456, w: 0.75 },  // T=28  surface 448  16px drop
 
-      // Collectible platforms (mid-right)
-      { x: 336, y: 408, w: 0.5 },   // T=25  top=384   col 28   under health (360,396)
-      { x: 456, y: 424, w: 0.5 },   // T=26  top=400   col 38   under feelings_up (480,408)
+      // Feelings alcove (64px above cross, optional)
+      { x: 360, y: 408, w: 0.50 },  // T=25  surface 384  64px up
 
-      // Right cluster (sword access)
-      { x: 600, y: 424, w: 0.75 },  // T=26  top=400   col 50
-      { x: 720, y: 440, w: 0.75 },  // T=27  top=416   col 60
-      { x: 816, y: 440, w: 0.5 },   // T=27  top=416   col 68   under sword (840,422)
+      // Right cluster (→ sword pickup)
+      { x: 600, y: 424, w: 0.75 },  // T=26  surface 400
+      { x: 720, y: 440, w: 0.75 },  // T=27  surface 416
+      { x: 816, y: 440, w: 0.50 },  // T=27  surface 416  (sword at x=840, y=422)
 
-      // Up path: center→shaft exit (32px steps)
-      { x: 432, y: 360, w: 0.75 },  // T=22  top=336   col 36
-      { x: 456, y: 328, w: 0.5 },   // T=20  top=304   col 38   ✓ 32px
-      { x: 480, y: 296, w: 0.75 },  // T=18  top=272   col 40   ✓ 32px
-      { x: 504, y: 264, w: 0.5 },   // T=16  top=240   col 42   ✓ 32px
-      { x: 528, y: 232, w: 0.75 },  // T=14  top=208   col 44   ✓ 32px
+      // Up path: center→shaft exit (32px steps, ≤5 ✓)
+      { x: 432, y: 360, w: 0.75 },  // T=22  surface 336  step 1
+      { x: 456, y: 328, w: 0.50 },  // T=20  surface 304  step 2
+      { x: 480, y: 296, w: 0.75 },  // T=18  surface 272  step 3
+      { x: 504, y: 264, w: 0.50 },  // T=16  surface 240  step 4
+      { x: 528, y: 232, w: 0.75 },  // T=14  surface 208  step 5
     ],
     enemies: [
-      { id: 'sf_4', type: 'shadow', x: 360, y: 636 },
-      { id: 'sf_5', type: 'shadow', x: 720, y: 636 },
-      { id: 'sk_0', type: 'skeleton', x: 480, y: 636 },
+      { id: 'bl_1', type: 'bloated', x: 480, y: 636 },
+      { id: 'sk_0', type: 'skeleton', x: 720, y: 636 },
       { id: 'bat_1', type: 'bat', x: 360, y: 300, noGravity: true },
       { id: 'fl_3', type: 'floating', x: 840, y: 300, noGravity: true },
     ],
     collectibles: [
       { type: 'feelings_up', saveId: 'feel_1', x: 480, y: 408, value: 50 },
       { type: 'health', saveId: 'health_4', x: 840, y: 600, value: 30, persistent: false },
-      { type: 'health', saveId: 'health_7', x: 360, y: 396, value: 30, persistent: false },
     ],
     benches: [],
     npcs: [{
@@ -241,15 +261,14 @@ const ROOMS = {
       { x: 840, y: 422, key: 'sword', name: 'SWORD OF TRUTH' },
     ],
     abilityGates: [{ x: 0, y: 650, w: 24, h: 36, key: 'dash' }],
-    oneWayDoors: [], bossTrigger: false,
+    oneWayDoors: [], destructibleWalls: [], bossTrigger: false,
     decorations: {},
     mapGrid: { x: 3, y: 1 },
   },
 
   // ── VERTICAL SHAFT (player has dash) ──
-  // 13 platforms, Δ3 rows (48px) per step. Zigzag left→right then cross to right wall.
-  // T=41→T=11 (top 640→160). Final platforms near right wall for preboss exit.
-  // Room: 720×960 (60×61 tiles). Camera: shaft profile (zoom 1.6).
+  // 5 wide floor slabs + narrow edge staircases. No staircase steps as primary layout.
+  // Room: 720×960 (45×60 tiles). Camera: shaft profile (zoom 1.6).
   shaft: {
     id: 'shaft', name: 'VERTICAL SHAFT', width: 720, height: 960,
     groundTexture: 'ground_mid',
@@ -257,29 +276,60 @@ const ROOMS = {
     exits: [
       { x: 300, y: 954, w: 100, h: 10, dir: 'down', targetRoom: 'mid', targetX: 660, targetY: 60 },
       { x: 708, y: 384, w: 10, h: 160, dir: 'right', targetRoom: 'preboss', targetX: 48, targetY: 384 },
+      { x: 0, y: 624, w: 10, h: 60, dir: 'left', targetRoom: 'ascent', targetX: 900, targetY: 60 },
     ],
-    ground: [{ x: 0, w: 1 }],
+    ground: [{ x: 0, w: 15 }],
     platforms: [
-      // Zigzag climb (left side, 48px steps)
-      { x: 60, y: 664, w: 0.75 },   // T=41  top=640   col 5    32px from ground
-      { x: 120, y: 616, w: 0.75 },  // T=38  top=592   col 10   ✓ 48px
-      { x: 72, y: 568, w: 0.75 },   // T=35  top=544   col 6    ✓ 48px zigzag left
-      { x: 168, y: 520, w: 0.75 },  // T=32  top=496   col 14   ✓ 48px
-      { x: 96, y: 472, w: 0.75 },   // T=29  top=448   col 8    ✓ 48px zigzag left
-      { x: 240, y: 424, w: 0.75 },  // T=26  top=400   col 20   ✓ 48px
-      { x: 144, y: 376, w: 0.75 },  // T=23  top=352   col 12   ✓ 48px zigzag left
-      { x: 288, y: 328, w: 0.75 },  // T=20  top=304   col 24   ✓ 48px
-      { x: 204, y: 280, w: 0.75 },  // T=17  top=256   col 17   ✓ 48px zigzag left
-      // Cross to right wall (same row, horizontal dash)
-      { x: 336, y: 280, w: 0.75 },  // T=17  top=256   col 28   132px jump right ✓
-      { x: 480, y: 280, w: 0.75 },  // T=17  top=256   col 40   ✓ 144px
-      // Climb right wall (toward exit zone at y=384-544)
-      { x: 600, y: 232, w: 0.75 },  // T=14  top=208   col 50   ✓ 48px up + 128px right
-      { x: 696, y: 184, w: 0.75 },  // T=11  top=160   col 58   ✓ 48px up — exit reachable
+      // ── FLOOR 5: SUMMIT (surface 144, row 9) — 2 slabs, gap 240-336 ──
+      { x: 0,   y: 168, w: 3.75 },  // left slab  0→240
+      { x: 336, y: 168, w: 6.0  },  // right slab 336→720
+      // Collectibles: hp_up(144,130), feelings_up(560,130) on F5
+
+      // ── FLOOR 4 (surface 304, row 19) — 2 slabs, gap 240-336 ──
+      { x: 0,   y: 328, w: 3.75 },  // left slab  0→240
+      { x: 336, y: 328, w: 4.75 },  // right slab 336→640
+      // Crystal hovers in gap at (288,290)
+
+      // ── FLOOR 3: PREBOSS LAYER (surface 464, row 29) — 2 slabs, gap 240-336 ──
+      { x: 0,   y: 488, w: 3.75 },  // left slab  0→240
+      { x: 336, y: 488, w: 6.0  },  // right slab 336→720 → preboss exit at x=708
+      // Bat at (480,450) patrols right slab
+
+      // ── FLOOR 2: ASCENT LAYER (surface 592, row 37) — 2 slabs, gap 240-336 ──
+      { x: 0,   y: 616, w: 3.75 },  // left slab  0→240
+      { x: 336, y: 616, w: 4.75 },  // right slab 336→640
+      // → ascent exit at x=0. Bat at (240,580) hovers in gap
+
+      // ── FLOOR 1: ENTRY LAYER (surface 736, row 46) — 2 slabs, gap 240-336 ──
+      { x: 0,   y: 760, w: 3.75 },  // left slab  0→240
+      { x: 336, y: 760, w: 6.0  },  // right slab 336→720 → elevator at x=288 fills gap
+
+      // ── RECOVERY STAIRCASE (ground→F1, staggered →gap 240) — 3 steps ──
+      { x: 168, y: 888, w: 0.75 },  // surface 864, row 54
+      { x: 216, y: 840, w: 0.75 },  // surface 816, row 51, +48px
+      { x: 264, y: 792, w: 0.75 },  // surface 768, row 48, +48px → 32px to F1, near gap
+
+      // ── LEFT STAIRCASE (F1→F2, staggered →gap 240) — 2 steps ──
+      { x: 144, y: 712, w: 0.75 },  // surface 688, row 43
+      { x: 192, y: 664, w: 0.75 },  // surface 640, row 40, +48px → 48px to F2, at gap edge
     ],
-    enemies: [],
-    collectibles: [{ type: 'hp_up', saveId: 'hp_3', x: 240, y: 264, value: 10 }],
-    benches: [], npcs: [], abilityItems: [], abilityGates: [], oneWayDoors: [], bossTrigger: false,
+    movingPlatforms: [
+      { x: 288, y: 600, width: 96, rangeY: 448, speed: 60 },
+    ],
+    enemies: [
+      { id: 'bat_shaft_0', type: 'bat', x: 240, y: 580, noGravity: true },
+      { id: 'bat_shaft_1', type: 'bat', x: 480, y: 450, noGravity: true },
+      { id: 'bat_shaft_2', type: 'bat', x: 500, y: 290, noGravity: true },
+      { id: 'cr_shaft_0', type: 'crystal', x: 288, y: 290, noGravity: true },
+      { id: 'bl_shaft_0', type: 'bloated', x: 180, y: 900 },
+      { id: 'fl_shaft_0', type: 'floating', x: 480, y: 720, noGravity: true },
+      { id: 'sk_shaft_0', type: 'skeleton', x: 120, y: 450 },
+    ],
+    collectibles: [
+      { type: 'hp_up', saveId: 'hp_3', x: 144, y: 130, value: 10 },
+      { type: 'feelings_up', saveId: 'feel_3', x: 560, y: 130, value: 50 },
+    ],
+    benches: [], npcs: [], abilityItems: [], abilityGates: [], oneWayDoors: [], destructibleWalls: [], bossTrigger: false,
     decorations: {},
     mapGrid: { x: 3, y: 0 },
   },
@@ -298,29 +348,37 @@ const ROOMS = {
     ],
     ground: [{ x: 0, w: 15 }],
     platforms: [
-      // Entry from shaft at ~y=384-544, land on descending path rightward
-      { x: 120, y: 424, w: 0.75 },  // T=26  top=400   col 10   near shaft entry
-      { x: 240, y: 376, w: 0.75 },  // T=23  top=352   col 20   ✓ 48px down (bench below)
-      { x: 360, y: 328, w: 0.75 },  // T=20  top=304   col 30   ✓ 48px down
-      { x: 480, y: 280, w: 0.75 },  // T=17  top=256   col 40   ✓ 48px down
-      // Back up for variety
-      { x: 600, y: 328, w: 0.75 },  // T=20  top=304   col 50   ✓ 48px up
-      { x: 720, y: 376, w: 0.75 },  // T=23  top=352   col 60   ✓ 48px up
-      // Collectible platforms (right side)
-      { x: 792, y: 376, w: 0.5 },   // T=23  top=352   col 66   near hp_up (816,360)
-      { x: 816, y: 440, w: 0.5 },   // T=27  top=416   col 68   near health (840,432)
+      // ── Entry from shaft (left side, y~400 landing) ──
+      { x: 120, y: 424, w: 0.75 },  // T=26  surface 400  entry landing
+
+      // ── Descending staircase (3 steps, 48px each, ≤5 ✓) ──
+      { x: 240, y: 376, w: 0.75 },  // T=23  surface 352  descent 1
+      { x: 360, y: 328, w: 0.75 },  // T=20  surface 304  descent 2
+      { x: 480, y: 280, w: 0.75 },  // T=17  surface 256  descent 3 (bottom)
+
+      // ── Ascending return (3 steps, 48px each, ≤5 ✓) ──
+      { x: 600, y: 328, w: 0.75 },  // T=20  surface 304  ascent 1
+      { x: 720, y: 376, w: 1.50 },  // T=23  surface 352  ascent 2 + hp_up merged
+
+      // ── Boss approach (right side) ──
+      { x: 816, y: 440, w: 0.50 },  // T=27  surface 416  health orb
+
+      // ── Upper tier (48px steps, visible from descent, tactical reward) ──
+      { x: 504, y: 232, w: 0.75 },  // T=13  surface 208  48px up from T=17
+      { x: 432, y: 184, w: 0.75 },  // T=10  surface 160  48px up
+      { x: 576, y: 136, w: 0.50 },  // T=7   surface 112  48px up — feelings_up at top
     ],
     enemies: [
-      { id: 'sf_6', type: 'shadow', x: 600, y: 636 },
-      { id: 'sf_7', type: 'shadow', x: 840, y: 636 },
-      { id: 'sk_1', type: 'skeleton', x: 360, y: 636 },
+      { id: 'bl_2', type: 'bloated', x: 600, y: 636 },
+      { id: 'sk_2', type: 'skeleton', x: 360, y: 636 },
       { id: 'fl_4', type: 'floating', x: 720, y: 312, noGravity: true },
       { id: 'bat_2', type: 'bat', x: 600, y: 240, noGravity: true },
     ],
     collectibles: [
-      { type: 'hp_up', saveId: 'hp_2', x: 816, y: 360, value: 10 },
+      { type: 'hp_up', saveId: 'hp_2', x: 756, y: 360, value: 10 },
       { type: 'health', saveId: 'health_5', x: 240, y: 600, value: 30, persistent: false },
       { type: 'health', saveId: 'health_6', x: 840, y: 432, value: 30, persistent: false },
+      { type: 'feelings_up', saveId: 'feel_4', x: 600, y: 108, value: 50 },
     ],
     benches: [],
     npcs: [], abilityItems: [],
@@ -328,7 +386,7 @@ const ROOMS = {
       { x: 0, y: 650, w: 24, h: 36, key: 'doubleJump' },
       { x: 840, y: 650, w: 24, h: 36, key: 'shadowCloak' },
     ],
-    oneWayDoors: [], bossTrigger: false,
+    oneWayDoors: [], destructibleWalls: [], bossTrigger: false,
     decorations: {},
     mapGrid: { x: 4, y: 1 },
   },
@@ -349,7 +407,7 @@ const ROOMS = {
     ],
     enemies: [], collectibles: [],
     benches: [],
-    npcs: [], abilityItems: [], abilityGates: [], oneWayDoors: [],
+    npcs: [], abilityItems: [], abilityGates: [], oneWayDoors: [], destructibleWalls: [],
     bossTrigger: true,
     decorations: {},
     mapGrid: { x: 5, y: 0 },
@@ -391,6 +449,11 @@ function scaleRoom(room) {
   if (Array.isArray(c.oneWayDoors)) {
     c.oneWayDoors = c.oneWayDoors.map(d => ({ ...d, x: scaleVal(d.x), w: Math.max(1, scaleVal(d.w)) }));
   }
+  if (Array.isArray(c.destructibleWalls)) {
+    c.destructibleWalls = c.destructibleWalls.map(w => ({
+      ...w, x: scaleVal(w.x), w: Math.max(1, scaleVal(w.w))
+    }));
+  }
   // Decorations
   const dec = c.decorations;
   if (dec) {
@@ -420,11 +483,12 @@ function generateTMJ(room) {
   const groundData = new Array(tileCols * tileRows).fill(0);
   const platformData = new Array(tileCols * tileRows).fill(0);
 
-  // ── Ground tiles ──
+  // ── Ground tiles (dynamically placed ~48px from room bottom) ──
+  const groundRow = Math.round((mapH - 48) / TILE_SIZE);
   for (const g of scaled.ground) {
     const startCol = Math.round(g.x * 64 / TILE_SIZE);
     const tileCount = g.w * TILES_PER_UNIT;
-    const row = GROUND_ROW;
+    const row = groundRow;
     for (let i = 0; i < tileCount; i++) {
       const col = startCol + i;
       if (col >= 0 && col < tileCols && row >= 0 && row < tileRows) {
@@ -595,6 +659,40 @@ function generateTMJ(room) {
     layers.push({
       id: 6, name: 'Doors', type: 'objectgroup', visible: true,
       objects: doors, opacity: 1, x: 0, y: 0,
+    });
+  }
+
+  // DestructibleWalls
+  if (scaled.destructibleWalls && scaled.destructibleWalls.length) {
+    const walls = scaled.destructibleWalls.map((w, i) => ({
+      id: nextObjId++, name: `destructibleWall_${i}`, type: 'destructibleWall',
+      x: w.x, y: w.y, width: w.w, height: w.h,
+      properties: [
+        { name: 'spawnType', type: 'string', value: 'destructibleWall' },
+        { name: 'wallId', type: 'string', value: `wall_${room.id}_${i}` },
+        { name: 'maxHp', type: 'int', value: w.maxHp || 6 },
+      ],
+    }));
+    layers.push({
+      id: 7, name: 'DestructibleWalls', type: 'objectgroup', visible: true,
+      objects: walls, opacity: 1, x: 0, y: 0,
+    });
+  }
+
+  // MovingPlatforms
+  if (scaled.movingPlatforms && scaled.movingPlatforms.length) {
+    const mpObjs = scaled.movingPlatforms.map((mp, i) => ({
+      id: nextObjId++, name: `movingPlatform_${i}`, type: 'movingPlatform',
+      x: mp.x, y: mp.y, width: mp.width, height: 16,
+      properties: [
+        { name: 'spawnType', type: 'string', value: 'movingPlatform' },
+        { name: 'rangeY', type: 'int', value: mp.rangeY },
+        { name: 'speed', type: 'int', value: mp.speed },
+      ],
+    }));
+    layers.push({
+      id: 8, name: 'MovingPlatforms', type: 'objectgroup', visible: true,
+      objects: mpObjs, opacity: 1, x: 0, y: 0,
     });
   }
 
