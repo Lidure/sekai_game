@@ -6,6 +6,7 @@ const Lang = {
     EN: {
         pauseTitle: '\u25C6 PAUSED \u25C6',
         resume: 'RESUME',
+        status: 'STATUS',
         save: 'SAVE',
         returnToMenu: 'RETURN TO MENU',
         fullscreen: 'FULLSCREEN',
@@ -59,6 +60,7 @@ const Lang = {
     CN: {
         pauseTitle: '\u25C6 \u6682\u505C \u25C6',
         resume: '\u7EE7\u7EED',
+        status: '\u72B6\u6001',
         save: '\u5B58\u6863',
         returnToMenu: '\u8FD4\u56DE\u4E3B\u83DC\u5355',
         fullscreen: '\u5168\u5C4F',

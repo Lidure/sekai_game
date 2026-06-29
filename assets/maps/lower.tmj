@@ -7496,32 +7496,6 @@
         },
         {
           "id": 4,
-          "name": "enemy_sf_3",
-          "type": "enemy",
-          "x": 1040,
-          "y": 636,
-          "width": 0,
-          "height": 0,
-          "properties": [
-            {
-              "name": "spawnType",
-              "type": "string",
-              "value": "enemy"
-            },
-            {
-              "name": "enemyType",
-              "type": "string",
-              "value": "shadow"
-            },
-            {
-              "name": "spawnId",
-              "type": "string",
-              "value": "sf_3"
-            }
-          ]
-        },
-        {
-          "id": 5,
           "name": "enemy_sk_1",
           "type": "enemy",
           "x": 480,
@@ -7543,6 +7517,37 @@
               "name": "spawnId",
               "type": "string",
               "value": "sk_1"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "name": "enemy_bat_lower_0",
+          "type": "enemy",
+          "x": 667,
+          "y": 360,
+          "width": 0,
+          "height": 0,
+          "properties": [
+            {
+              "name": "spawnType",
+              "type": "string",
+              "value": "enemy"
+            },
+            {
+              "name": "enemyType",
+              "type": "string",
+              "value": "bat"
+            },
+            {
+              "name": "spawnId",
+              "type": "string",
+              "value": "bat_lower_0"
+            },
+            {
+              "name": "noGravity",
+              "type": "bool",
+              "value": true
             }
           ]
         },
@@ -7612,6 +7617,32 @@
               "value": 10
             }
           ]
+        },
+        {
+          "id": 8,
+          "name": "ability_dash",
+          "type": "abilityItem",
+          "x": 933,
+          "y": 480,
+          "width": 0,
+          "height": 0,
+          "properties": [
+            {
+              "name": "spawnType",
+              "type": "string",
+              "value": "abilityItem"
+            },
+            {
+              "name": "abilityKey",
+              "type": "string",
+              "value": "dash"
+            },
+            {
+              "name": "abilityName",
+              "type": "string",
+              "value": "DASH"
+            }
+          ]
         }
       ],
       "opacity": 1,
@@ -7625,7 +7656,7 @@
       "visible": true,
       "objects": [
         {
-          "id": 8,
+          "id": 9,
           "name": "destructibleWall_0",
           "type": "destructibleWall",
           "x": 1024,
@@ -7657,7 +7688,7 @@
     }
   ],
   "nextlayerid": 8,
-  "nextobjectid": 9,
+  "nextobjectid": 10,
   "orientation": "orthogonal",
   "renderorder": "right-down",
   "tiledversion": "1.10.2",

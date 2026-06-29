@@ -11,6 +11,7 @@ class MapView {
         this.destroyed = false;
         this._physicsPausedByMap = false;
         this._stateHash = '';
+        this._playerFacingRight = true;
 
         this.rooms = this._collectRooms();
         this.roomIndex = new Map(this.rooms.map(room => [room.id, room]));
@@ -92,9 +93,8 @@ class MapView {
     }
 
     _collectPOIs(roomDef) {
-        const pois = [];
-        if (roomDef.bossTrigger) pois.push({ type: 'boss' });
-        return pois;
+        if (!roomDef || !roomDef.mapPOIs) return [];
+        return roomDef.mapPOIs.map(type => ({ type }));
     }
 
     _buildKeyboard() {
@@ -120,6 +120,8 @@ class MapView {
         this._savedZoom = this.scene.cameras.main.zoom;
         this.scene.cameras.main.setZoom(1);
         this.container.setVisible(true);
+        this.container.setAlpha(0);
+        this.container.setScale(0.92);
         this._syncState(
             this.scene.currentRoomId,
             this.scene.player ? this.scene.player.x : 0,
@@ -135,6 +137,14 @@ class MapView {
         }
 
         this._redrawStatic();
+
+        this.scene.tweens.add({
+            targets: this.container,
+            alpha: 1,
+            scale: 1,
+            duration: 180,
+            ease: 'Sine.easeOut',
+        });
     }
 
     _close() {
@@ -144,17 +154,28 @@ class MapView {
             this.scene.cameras.main.setZoom(this._savedZoom);
             this._savedZoom = undefined;
         }
-        this.container.setVisible(false);
         this.playerGfx.clear();
         if (this._physicsPausedByMap && this.scene.physics && this.scene.physics.world && this.scene.physics.world.isPaused) {
             this.scene.physics.resume();
         }
         this._physicsPausedByMap = false;
+
+        this.scene.tweens.add({
+            targets: this.container,
+            alpha: 0,
+            scale: 0.92,
+            duration: 120,
+            ease: 'Sine.easeIn',
+            onComplete: () => {
+                if (this.container) this.container.setVisible(false);
+            },
+        });
     }
 
-    update(roomId, playerX, playerY, visitedRooms) {
+    update(roomId, playerX, playerY, visitedRooms, facingRight) {
         if (this.destroyed) return;
         this._syncState(roomId, playerX, playerY, visitedRooms);
+        if (facingRight !== undefined) this._playerFacingRight = facingRight;
         if (!this.isOpen) return;
         this._drawPlayerMarker();
     }
@@ -198,6 +219,7 @@ class MapView {
         this._drawNodes();
         this._drawUnknownRooms();
         this._drawPlayerMarker();
+        this._drawLegend();
     }
 
     _adjacentRoomIds() {
@@ -288,6 +310,25 @@ class MapView {
             this.connectionGfx.lineTo(midX, dy);
             this.connectionGfx.lineTo(dx, dy);
             this.connectionGfx.strokePath();
+
+            // Directional arrow at midpoint
+            const midY = (sy + dy) / 2;
+            const arrowSize = 3.5;
+            const isHorizontal = Math.abs(dx - sx) > Math.abs(dy - sy);
+            this.connectionGfx.fillStyle(color, alpha * 0.9);
+            if (isHorizontal) {
+                if (dx > sx) {
+                    this.connectionGfx.fillTriangle(midX, midY - arrowSize, midX, midY + arrowSize, midX + arrowSize, midY);
+                } else {
+                    this.connectionGfx.fillTriangle(midX, midY - arrowSize, midX, midY + arrowSize, midX - arrowSize, midY);
+                }
+            } else {
+                if (dy > sy) {
+                    this.connectionGfx.fillTriangle(midX - arrowSize, midY, midX + arrowSize, midY, midX, midY + arrowSize);
+                } else {
+                    this.connectionGfx.fillTriangle(midX - arrowSize, midY, midX + arrowSize, midY, midX, midY - arrowSize);
+                }
+            }
         }
     }
 
@@ -311,6 +352,9 @@ class MapView {
             this.nodeGfx.fillRoundedRect(pos.x, pos.y, pos.w, pos.h, 4);
             this.nodeGfx.lineStyle(state.current ? 2 : 1, line, state.current ? 1 : 0.75);
             this.nodeGfx.strokeRoundedRect(pos.x, pos.y, pos.w, pos.h, 4);
+
+            // Room profile miniature
+            this._drawRoomMiniature(this.nodeGfx, pos, room.id);
 
             this.nodeGfx.lineStyle(1, state.current ? 0x7fe0de : 0x2a3554, 0.55);
             this.nodeGfx.lineBetween(pos.cx, pos.y + pos.h, pos.cx, pos.y + pos.h + 6);
@@ -355,12 +399,14 @@ class MapView {
             const y = cy + 12;
             let color = 0x7FE0DE, shape = 'square';
             switch (poi.type) {
-                case 'bench':    color = 0x7FE0DE; shape = 'square'; break;
-                case 'npc':      color = 0xA78BFA; shape = 'circle'; break;
-                case 'ability':  color = 0xFBBF24; shape = 'diamond'; break;
-                case 'gate':     color = 0xF87171; shape = 'triangle'; break;
-                case 'boss':     color = 0xEF4444; shape = 'diamond'; break;
-                case 'upgrade':  color = 0x34D399; shape = 'circle'; break;
+                case 'hp_up':        color = 0x34D399; shape = 'circle'; break;
+                case 'feelings_up':  color = 0x2EC4B6; shape = 'diamond'; break;
+                case 'bench':        color = 0x7FE0DE; shape = 'square'; break;
+                case 'npc':          color = 0xA78BFA; shape = 'circle'; break;
+                case 'ability':      color = 0xFBBF24; shape = 'diamond'; break;
+                case 'gate':         color = 0xF87171; shape = 'triangle'; break;
+                case 'boss':         color = 0xEF4444; shape = 'diamond'; break;
+                case 'upgrade':      color = 0x34D399; shape = 'circle'; break;
             }
             icons.push({ x, y, color, shape, type: poi.type });
         });
@@ -385,6 +431,9 @@ class MapView {
             this.nodeGfx.lineStyle(1, line, 0.5);
             this.nodeGfx.strokeRoundedRect(pos.x, pos.y, pos.w, pos.h, 4);
 
+            // Room profile miniature (unknown)
+            this._drawRoomMiniature(this.nodeGfx, pos, room.id);
+
             const qLabel = this.scene.add.text(pos.cx, pos.cy, '???', {
                 fontSize: '10px',
                 fontFamily: 'monospace',
@@ -394,6 +443,47 @@ class MapView {
             this.container.add(qLabel);
             this.roomLabels.push(qLabel);
         });
+    }
+
+    _drawRoomMiniature(gfx, pos, roomId) {
+        const ROOM_PROFILES = {
+            intro: 'ground', ascent: 'staircase', secret: 'tower',
+            lower: 'staircase', mid: 'complex', shaft: 'tower',
+            preboss: 'staircase', boss: 'arena', void: 'ground',
+        };
+        const profile = ROOM_PROFILES[roomId] || 'ground';
+        const ix = pos.x + 4, iy = pos.y + 4;
+        const iw = pos.w - 8, ih = pos.h - 8;
+
+        gfx.lineStyle(1, 0x3a5a7a, 0.4);
+
+        switch (profile) {
+            case 'ground':
+                gfx.lineBetween(ix, iy + ih - 6, ix + iw, iy + ih - 6);
+                break;
+            case 'staircase':
+                for (let s = 0; s < 3; s++) {
+                    const sx = ix + s * (iw / 3);
+                    const sy = iy + ih - 6 - s * 8;
+                    gfx.lineBetween(sx, sy, sx + iw / 3 - 4, sy);
+                }
+                break;
+            case 'tower':
+                gfx.lineBetween(ix + iw / 2, iy + 4, ix + iw / 2, iy + ih - 4);
+                for (let b = 0; b < 3; b++) {
+                    const by = iy + 4 + b * ((ih - 8) / 2);
+                    gfx.lineBetween(ix + 4, by, ix + iw - 4, by);
+                }
+                break;
+            case 'complex':
+                gfx.lineBetween(ix, iy + ih / 3, ix + iw / 2, iy + ih / 3);
+                gfx.lineBetween(ix + iw / 2, iy + ih * 2 / 3, ix + iw, iy + ih * 2 / 3);
+                break;
+            case 'arena':
+                gfx.lineBetween(ix, iy + ih - 4, ix + iw / 3, iy + ih - 4);
+                gfx.lineBetween(ix + iw * 2 / 3, iy + ih - 4, ix + iw, iy + ih - 4);
+                break;
+        }
     }
 
     _drawPlayerMarker() {
@@ -411,12 +501,63 @@ class MapView {
         const px = Phaser.Math.Clamp(markerX, pos.x + 6, pos.x + pos.w - 6);
         const py = Phaser.Math.Clamp(markerY, pos.y + 6, pos.y + pos.h - 6);
 
-        this.playerGfx.fillStyle(0xffffff, 0.12);
-        this.playerGfx.fillCircle(px, py, 7);
-        this.playerGfx.fillStyle(0xffffff, 1);
+        // Pulsing glow
+        const glowAlpha = 0.06 + 0.06 * Math.sin(this.scene.time.now / 300);
+        this.playerGfx.fillStyle(0xffffff, glowAlpha);
+        this.playerGfx.fillCircle(px, py, 10);
+
+        // Diamond marker
+        this.playerGfx.fillStyle(0xffffff, 0.9);
         this.playerGfx.fillTriangle(px, py - 4, px - 4, py, px + 4, py);
         this.playerGfx.fillTriangle(px, py + 4, px - 4, py, px + 4, py);
         this.playerGfx.fillCircle(px, py, 1.5);
+
+        // Facing indicator
+        const facingRight = this._playerFacingRight !== false;
+        if (facingRight) {
+            this.playerGfx.fillTriangle(px + 5, py - 2, px + 5, py + 2, px + 8, py);
+        } else {
+            this.playerGfx.fillTriangle(px - 5, py - 2, px - 5, py + 2, px - 8, py);
+        }
+    }
+
+    _drawLegend() {
+        const items = [
+            { type: 'boss', label: 'BOSS', color: 0xEF4444, shape: 'diamond' },
+            { type: 'npc', label: 'NPC', color: 0xA78BFA, shape: 'circle' },
+            { type: 'ability', label: 'ABILITY', color: 0xFBBF24, shape: 'diamond' },
+            { type: 'hp_up', label: 'HP UP', color: 0x34D399, shape: 'circle' },
+            { type: 'gate', label: 'GATE', color: 0xF87171, shape: 'triangle' },
+            { type: 'feelings_up', label: 'FEELINGS', color: 0x2EC4B6, shape: 'diamond' },
+        ];
+
+        const spacing = 65;
+        const totalW = items.length * spacing;
+        const legendY = this.panel.y + this.panel.h - 22;
+        const startX = this.panel.x + (this.panel.w - totalW) / 2 + 4;
+
+        items.forEach((item, i) => {
+            const x = startX + i * spacing;
+            const y = legendY;
+
+            this.frameGfx.fillStyle(item.color, 0.85);
+            if (item.shape === 'circle') {
+                this.frameGfx.fillCircle(x, y, 3);
+            } else if (item.shape === 'diamond') {
+                this.frameGfx.fillTriangle(x, y - 3, x - 2.5, y, x + 2.5, y);
+                this.frameGfx.fillTriangle(x, y + 3, x - 2.5, y, x + 2.5, y);
+            } else if (item.shape === 'triangle') {
+                this.frameGfx.fillTriangle(x, y - 3, x - 3, y + 2, x + 3, y + 2);
+            }
+
+            const label = this.scene.add.text(x + 7, y, item.label, {
+                fontSize: '7px',
+                fontFamily: 'monospace',
+                color: '#5a6a8a',
+            }).setOrigin(0, 0.5).setScrollFactor(0).setDepth(201);
+            this.container.add(label);
+            this.roomLabels.push(label);
+        });
     }
 
     _clearRoomLabels() {

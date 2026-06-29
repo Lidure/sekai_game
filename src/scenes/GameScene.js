@@ -58,6 +58,7 @@ class GameScene extends Phaser.Scene {
         this.hud = this.scene.get('HUDScene');
         this.pauseMenu = new PauseMenu(this);
         this.mapView = new MapView(this);
+        this.characterPanel = new CharacterPanel(this);
 
         // Audio — start exploration BGM
         this._setupBGM();
@@ -84,6 +85,9 @@ class GameScene extends Phaser.Scene {
         this.events.once('shutdown', () => {
             this.scene.stop('HUDScene');
             this._stopBgm();
+            if (this.characterPanel) { this.characterPanel.destroy(); this.characterPanel = null; }
+            if (this.mapView) { this.mapView.destroy(); this.mapView = null; }
+            if (this.pauseMenu) { this.pauseMenu.destroy(); this.pauseMenu = null; }
         });
     }
 
@@ -1560,8 +1564,18 @@ class GameScene extends Phaser.Scene {
         };
         this.input.on('pointerdown', this._pointerActionHandler);
 
+        // Character panel toggle (Tab)
+        this._tabHandler = (event) => {
+            event.preventDefault();
+            if (this.characterPanel) {
+                this.characterPanel.toggle();
+            }
+        };
+        this.input.keyboard.on('keydown-TAB', this._tabHandler);
+
         this.events.once('shutdown', () => {
             this.input.keyboard.off('keydown-J', this._attackHandlerJ);
+            this.input.keyboard.off('keydown-TAB', this._tabHandler);
             if (this.input) this.input.off('pointerdown', this._pointerActionHandler);
             if (this.npcs) this.npcs.forEach(n => n.destroy());
             if (this.chapterBg) { this.chapterBg.destroy(); this.chapterBg = null; }
@@ -2076,7 +2090,12 @@ class GameScene extends Phaser.Scene {
 
         // Update the map overlay even when paused (so player marker moves)
         if (this.mapView) {
-            this.mapView.update(this.currentRoomId, this.player.x, this.player.y, this.visitedRooms);
+            this.mapView.update(this.currentRoomId, this.player.x, this.player.y, this.visitedRooms, this.player ? !this.player.sprite.flipX : undefined);
+        }
+
+        // Update character panel if open
+        if (this.characterPanel && this.characterPanel.isOpen) {
+            this.characterPanel.refresh(this.player, this.visitedRooms, this.enemiesKilled);
         }
 
         if (this.pauseMenu.isPaused || this.scene.isPaused()) return;

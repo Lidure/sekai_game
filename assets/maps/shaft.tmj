@@ -7461,37 +7461,6 @@
       "objects": [
         {
           "id": 4,
-          "name": "enemy_bat_shaft_0",
-          "type": "enemy",
-          "x": 320,
-          "y": 580,
-          "width": 0,
-          "height": 0,
-          "properties": [
-            {
-              "name": "spawnType",
-              "type": "string",
-              "value": "enemy"
-            },
-            {
-              "name": "enemyType",
-              "type": "string",
-              "value": "bat"
-            },
-            {
-              "name": "spawnId",
-              "type": "string",
-              "value": "bat_shaft_0"
-            },
-            {
-              "name": "noGravity",
-              "type": "bool",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": 5,
           "name": "enemy_bat_shaft_1",
           "type": "enemy",
           "x": 640,
@@ -7522,7 +7491,7 @@
           ]
         },
         {
-          "id": 6,
+          "id": 5,
           "name": "enemy_bat_shaft_2",
           "type": "enemy",
           "x": 667,
@@ -7553,7 +7522,7 @@
           ]
         },
         {
-          "id": 7,
+          "id": 6,
           "name": "enemy_cr_shaft_0",
           "type": "enemy",
           "x": 384,
@@ -7584,7 +7553,7 @@
           ]
         },
         {
-          "id": 8,
+          "id": 7,
           "name": "enemy_bl_shaft_0",
           "type": "enemy",
           "x": 240,
@@ -7610,38 +7579,7 @@
           ]
         },
         {
-          "id": 9,
-          "name": "enemy_fl_shaft_0",
-          "type": "enemy",
-          "x": 640,
-          "y": 720,
-          "width": 0,
-          "height": 0,
-          "properties": [
-            {
-              "name": "spawnType",
-              "type": "string",
-              "value": "enemy"
-            },
-            {
-              "name": "enemyType",
-              "type": "string",
-              "value": "floating"
-            },
-            {
-              "name": "spawnId",
-              "type": "string",
-              "value": "fl_shaft_0"
-            },
-            {
-              "name": "noGravity",
-              "type": "bool",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": 10,
+          "id": 8,
           "name": "enemy_sk_shaft_0",
           "type": "enemy",
           "x": 160,
@@ -7667,7 +7605,7 @@
           ]
         },
         {
-          "id": 11,
+          "id": 9,
           "name": "collect_hp_3",
           "type": "collectible",
           "x": 192,
@@ -7698,7 +7636,7 @@
           ]
         },
         {
-          "id": 12,
+          "id": 10,
           "name": "collect_feel_3",
           "type": "collectible",
           "x": 747,
@@ -7740,7 +7678,7 @@
       "visible": true,
       "objects": [
         {
-          "id": 13,
+          "id": 11,
           "name": "movingPlatform_0",
           "type": "movingPlatform",
           "x": 288,
@@ -7772,7 +7710,7 @@
     }
   ],
   "nextlayerid": 8,
-  "nextobjectid": 14,
+  "nextobjectid": 12,
   "orientation": "orthogonal",
   "renderorder": "right-down",
   "tiledversion": "1.10.2",

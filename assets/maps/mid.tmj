@@ -7401,7 +7401,7 @@
           "type": "exit",
           "x": 0,
           "y": 624,
-          "width": 16,
+          "width": 13,
           "height": 60,
           "properties": [
             {
@@ -7412,7 +7412,7 @@
             {
               "name": "targetX",
               "type": "int",
-              "value": 1191
+              "value": 1216
             },
             {
               "name": "targetY",
@@ -7430,9 +7430,9 @@
           "id": 2,
           "name": "right",
           "type": "exit",
-          "x": 1261,
+          "x": 1681,
           "y": 624,
-          "width": 16,
+          "width": 13,
           "height": 60,
           "properties": [
             {
@@ -7443,7 +7443,7 @@
             {
               "name": "targetX",
               "type": "int",
-              "value": 89
+              "value": 85
             },
             {
               "name": "targetY",
@@ -7461,10 +7461,10 @@
           "id": 3,
           "name": "up",
           "type": "exit",
-          "x": 800,
-          "y": 0,
-          "width": 80,
-          "height": 10,
+          "x": 693,
+          "y": 156,
+          "width": 160,
+          "height": 72,
           "properties": [
             {
               "name": "targetRoom",
@@ -7474,12 +7474,12 @@
             {
               "name": "targetX",
               "type": "int",
-              "value": 80
+              "value": 400
             },
             {
               "name": "targetY",
               "type": "int",
-              "value": 708
+              "value": 200
             },
             {
               "name": "dir",
@@ -7553,37 +7553,6 @@
         },
         {
           "id": 6,
-          "name": "enemy_bat_1",
-          "type": "enemy",
-          "x": 480,
-          "y": 300,
-          "width": 0,
-          "height": 0,
-          "properties": [
-            {
-              "name": "spawnType",
-              "type": "string",
-              "value": "enemy"
-            },
-            {
-              "name": "enemyType",
-              "type": "string",
-              "value": "bat"
-            },
-            {
-              "name": "spawnId",
-              "type": "string",
-              "value": "bat_1"
-            },
-            {
-              "name": "noGravity",
-              "type": "bool",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": 7,
           "name": "enemy_fl_3",
           "type": "enemy",
           "x": 1120,
@@ -7614,7 +7583,7 @@
           ]
         },
         {
-          "id": 8,
+          "id": 7,
           "name": "collect_feel_1",
           "type": "collectible",
           "x": 640,
@@ -7645,7 +7614,7 @@
           ]
         },
         {
-          "id": 9,
+          "id": 8,
           "name": "collect_health_4",
           "type": "collectible",
           "x": 1120,
@@ -7681,7 +7650,7 @@
           ]
         },
         {
-          "id": 10,
+          "id": 9,
           "name": "npc_K",
           "type": "npc",
           "x": 160,
@@ -7712,7 +7681,7 @@
           ]
         },
         {
-          "id": 11,
+          "id": 10,
           "name": "ability_shadowCloak",
           "type": "abilityItem",
           "x": 320,
@@ -7738,7 +7707,7 @@
           ]
         },
         {
-          "id": 12,
+          "id": 11,
           "name": "ability_sword",
           "type": "abilityItem",
           "x": 1120,
@@ -7775,13 +7744,13 @@
       "visible": true,
       "objects": [
         {
-          "id": 13,
+          "id": 12,
           "name": "gate_dash",
           "type": "gate",
-          "x": 0,
-          "y": 650,
-          "width": 32,
-          "height": 36,
+          "x": 672,
+          "y": 176,
+          "width": 160,
+          "height": 72,
           "properties": [
             {
               "name": "spawnType",
@@ -7802,7 +7771,7 @@
     }
   ],
   "nextlayerid": 8,
-  "nextobjectid": 14,
+  "nextobjectid": 13,
   "orientation": "orthogonal",
   "renderorder": "right-down",
   "tiledversion": "1.10.2",

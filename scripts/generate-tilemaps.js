@@ -46,7 +46,7 @@ const ROOMS = {
       { x: 252, y: 632, w: 0.50 },  // T=39  surface 608  health orb platform
       { x: 576, y: 664, w: 0.50 },  // T=41  surface 640  combat platform above bloated
     ],
-    enemies: [{ id: 'intro_0', type: 'bloated', x: 540, y: 636 }],
+    enemies: [{ id: 'intro_0', type: 'bloated', x: 480, y: 636 }],
     collectibles: [{ type: 'health', saveId: 'health_1', x: 600, y: 600, value: 30, persistent: false }],
     benches: [], npcs: [], abilityItems: [], abilityGates: [], oneWayDoors: [], destructibleWalls: [], bossTrigger: false,
     decorations: {},
@@ -65,6 +65,7 @@ const ROOMS = {
     exits: [
       { x: 0, y: 624, w: 10, h: 60, dir: 'left', targetRoom: 'intro', targetX: 912, targetY: 660 },
       { x: 954, y: 624, w: 10, h: 60, dir: 'right', targetRoom: 'lower', targetX: 48, targetY: 660 },
+      { x: 530, y: 300, w: 48, h: 80, dir: 'up', targetRoom: 'secret', targetX: 640, targetY: 660 },
     ],
     ground: [{ x: 0, w: 15 }],
     platforms: [
@@ -87,8 +88,8 @@ const ROOMS = {
       { x: 528, y: 440, w: 0.50 },  // T=27  surface 416  health orb here
     ],
     enemies: [
-      { id: 'sf_1', type: 'shadow', x: 360, y: 636 },
-      { id: 'bat_0', type: 'bat', x: 720, y: 360, noGravity: true },
+      { id: 'sf_1', type: 'shadow', x: 300, y: 636 },
+      { id: 'bat_0', type: 'bat', x: 600, y: 300, noGravity: true },
     ],
     collectibles: [
       { type: 'health', saveId: 'health_2', x: 480, y: 600, value: 30, persistent: false },
@@ -119,6 +120,7 @@ const ROOMS = {
     tint: { color: 0x0a1018, alpha: 0.25 },
     exits: [
       { x: 474, y: 714, w: 30, h: 10, dir: 'down', targetRoom: 'ascent', targetX: 480, targetY: 360 },
+      { x: 474, y: 60, w: 30, h: 80, dir: 'up', targetRoom: 'void', targetX: 480, targetY: 60 },
     ],
     ground: [{ x: 0, w: 15 }],
     platforms: [
@@ -137,8 +139,9 @@ const ROOMS = {
     ],
     enemies: [
       { id: 'fl_1', type: 'floating', x: 480, y: 156, noGravity: true },
-      { id: 'fl_2', type: 'floating', x: 720, y: 120, noGravity: true },
+      { id: 'fl_2', type: 'floating', x: 720, y: 240, noGravity: true },
       { id: 'cr_0', type: 'crystal', x: 192, y: 160, noGravity: true },
+      { id: 'sf_secret_0', type: 'shadow', x: 400, y: 636 },
     ],
     collectibles: [
       { type: 'hp_up', saveId: 'hp_1', x: 806, y: 168, value: 10 },
@@ -147,6 +150,41 @@ const ROOMS = {
     benches: [], npcs: [], abilityItems: [], abilityGates: [], oneWayDoors: [], destructibleWalls: [], bossTrigger: false,
     decorations: {},
     mapGrid: { x: 1, y: 0 },
+  },
+
+  // ── VOID (secret challenge room, reached from secret) ──
+  // Vertical climb: 8 winding platforms from ground to upper area.
+  // 48px steps, staggered left→right. Dead-end — drop back to bottom exit.
+  // Crystal hovers near top, shadow patrols ground near exit.
+  void: {
+    id: 'void', name: 'THE VOID', width: 960, height: 720,
+    groundTexture: 'ground_mid',
+    tint: { color: 0x0a0010, alpha: 0.35 },
+    exits: [
+      { x: 474, y: 714, w: 30, h: 10, dir: 'down', targetRoom: 'secret', targetX: 480, targetY: 60 },
+    ],
+    ground: [{ x: 0, w: 15 }],
+    platforms: [
+      // Winding ascent from bottom to top (48px steps, staggered)
+      { x: 144, y: 664, w: 0.75 },  // T=41  surface 640  step 1 (left)
+      { x: 288, y: 616, w: 0.75 },  // T=38  surface 592  step 2 (right, +48px)
+      { x: 168, y: 568, w: 0.75 },  // T=35  surface 544  step 3 (left, +48px)
+      { x: 312, y: 520, w: 0.75 },  // T=32  surface 496  step 4 (right, +48px)
+      { x: 216, y: 472, w: 0.75 },  // T=29  surface 448  step 5 (left, +48px) — health orb reachable
+      { x: 360, y: 424, w: 0.75 },  // T=26  surface 400  step 6 (right, +48px)
+      { x: 264, y: 376, w: 0.75 },  // T=23  surface 352  step 7 (left, +48px)
+      { x: 408, y: 328, w: 0.75 },  // T=20  surface 304  step 8 (right, +48px) — crystal above
+    ],
+    enemies: [
+      { id: 'cr_void_0', type: 'crystal', x: 432, y: 260, noGravity: true },
+      { id: 'sf_void_0', type: 'shadow', x: 768, y: 616 },
+    ],
+    collectibles: [
+      { type: 'health', saveId: 'health_void', x: 504, y: 440, value: 30, persistent: false },
+    ],
+    benches: [], npcs: [], abilityItems: [], abilityGates: [], oneWayDoors: [], destructibleWalls: [], bossTrigger: false,
+    decorations: {},
+    mapGrid: { x: 2, y: 0 },
   },
 
   // ── LOWER (no abilities yet) ──
@@ -182,14 +220,16 @@ const ROOMS = {
     ],
     enemies: [
       { id: 'sf_2', type: 'shadow', x: 600, y: 636 },
-      { id: 'sf_3', type: 'shadow', x: 780, y: 636 },
       { id: 'sk_1', type: 'skeleton', x: 360, y: 636 },
+      { id: 'bat_lower_0', type: 'bat', x: 500, y: 360, noGravity: true },
     ],
     collectibles: [
       { type: 'health', saveId: 'health_3', x: 840, y: 480, value: 30, persistent: false },
       { type: 'hp_up', saveId: 'hp_4', x: 456, y: 456, value: 10 },
     ],
-    benches: [], npcs: [], abilityItems: [], abilityGates: [],
+    benches: [], npcs: [],
+    abilityItems: [{ x: 700, y: 480, key: 'dash', name: 'DASH' }],
+    abilityGates: [],
     oneWayDoors: [],
     destructibleWalls: [{ x: 768, y: 448, w: 48, h: 80, maxHp: 6 }],
     bossTrigger: false,
@@ -201,14 +241,14 @@ const ROOMS = {
   // Multi-tier platform network. Left staircase (ground→dash), cross path (right→sword),
   // center up-path (→shaft). 16 platforms, 32-48px steps.
   // Dash at (240,514) just below T=32 platform. Sword at (840,422) above T=27 platform.
-  mid: {
+    mid: {
     id: 'mid', name: 'MID CORRIDOR', width: 960, height: 720,
     groundTexture: 'ground_mid',
     tint: { color: 0x100a22, alpha: 0.25 },
     exits: [
-      { x: 0, y: 624, w: 12, h: 60, dir: 'left', targetRoom: 'lower', targetX: 893, targetY: 660 },
-      { x: 946, y: 624, w: 12, h: 60, dir: 'right', targetRoom: 'preboss', targetX: 67, targetY: 660 },
-      { x: 600, y: 0, w: 60, h: 10, dir: 'up', targetRoom: 'shaft', targetX: 60, targetY: 708 },
+      { x: 0, y: 624, w: 10, h: 60, dir: 'left', targetRoom: 'lower', targetX: 912, targetY: 660 },
+      { x: 1261, y: 624, w: 10, h: 60, dir: 'right', targetRoom: 'preboss', targetX: 64, targetY: 660 },
+      { x: 520, y: 156, w: 120, h: 72, dir: 'up', targetRoom: 'shaft', targetX: 300, targetY: 200 },
     ],
     ground: [{ x: 0, w: 15 }],
     platforms: [
@@ -240,7 +280,6 @@ const ROOMS = {
     enemies: [
       { id: 'bl_1', type: 'bloated', x: 480, y: 636 },
       { id: 'sk_0', type: 'skeleton', x: 720, y: 636 },
-      { id: 'bat_1', type: 'bat', x: 360, y: 300, noGravity: true },
       { id: 'fl_3', type: 'floating', x: 840, y: 300, noGravity: true },
     ],
     collectibles: [
@@ -260,7 +299,7 @@ const ROOMS = {
       { x: 240, y: 514, key: 'shadowCloak', name: 'SHADOW DASH' },
       { x: 840, y: 422, key: 'sword', name: 'SWORD OF TRUTH' },
     ],
-    abilityGates: [{ x: 0, y: 650, w: 24, h: 36, key: 'dash' }],
+    abilityGates: [{ x: 504, y: 176, w: 120, h: 72, key: 'dash' }],
     oneWayDoors: [], destructibleWalls: [], bossTrigger: false,
     decorations: {},
     mapGrid: { x: 3, y: 1 },
@@ -317,12 +356,10 @@ const ROOMS = {
       { x: 288, y: 600, width: 96, rangeY: 448, speed: 60 },
     ],
     enemies: [
-      { id: 'bat_shaft_0', type: 'bat', x: 240, y: 580, noGravity: true },
       { id: 'bat_shaft_1', type: 'bat', x: 480, y: 450, noGravity: true },
       { id: 'bat_shaft_2', type: 'bat', x: 500, y: 290, noGravity: true },
       { id: 'cr_shaft_0', type: 'crystal', x: 288, y: 290, noGravity: true },
       { id: 'bl_shaft_0', type: 'bloated', x: 180, y: 900 },
-      { id: 'fl_shaft_0', type: 'floating', x: 480, y: 720, noGravity: true },
       { id: 'sk_shaft_0', type: 'skeleton', x: 120, y: 450 },
     ],
     collectibles: [
@@ -371,7 +408,6 @@ const ROOMS = {
     enemies: [
       { id: 'bl_2', type: 'bloated', x: 600, y: 636 },
       { id: 'sk_2', type: 'skeleton', x: 360, y: 636 },
-      { id: 'fl_4', type: 'floating', x: 720, y: 312, noGravity: true },
       { id: 'bat_2', type: 'bat', x: 600, y: 240, noGravity: true },
     ],
     collectibles: [
@@ -782,7 +818,7 @@ function generateTMJ(room) {
 // ── Main ──
 if (!fs.existsSync(MAPS_DIR)) fs.mkdirSync(MAPS_DIR, { recursive: true });
 
-const ROOM_ORDER = ['intro', 'ascent', 'secret', 'lower', 'mid', 'shaft', 'preboss', 'boss'];
+const ROOM_ORDER = ['intro', 'ascent', 'secret', 'void', 'lower', 'mid', 'shaft', 'preboss', 'boss'];
 
 for (const id of ROOM_ORDER) {
   const room = ROOMS[id];

@@ -40,8 +40,8 @@ class Enemy {
         this.spawnX = x;
         this.spawnY = y;
         this.isReturning = false;
-        this.leashDistance = config.leashDistance || 200;
-        this.returnSpeed = config.returnSpeed || 80;
+        this.leashDistance = config.leashDistance || 120;
+        this.returnSpeed = config.returnSpeed || 100;
 
         // Sprite
         this.sprite = scene.physics.add.sprite(x, y, config.textureKey);
@@ -104,6 +104,51 @@ class Enemy {
     }
 
     /* ================================================================== */
+    /*  Pogo Support (HK-style downward strike bounce)                       */
+    /* ================================================================== */
+
+    /**
+     * Check if the player is performing a pogo (above enemy, falling).
+     * Used by takeDamage() to redirect to pogo behavior.
+     * @param {object} player
+     * @returns {boolean}
+     */
+    _isPogoHit(player) {
+        if (!player || player.dead) return false;
+        // Player must be above the enemy center and falling
+        const playerAbove = player.body.y + player.body.height * 0.5 < this.body.y - this.body.height * 0.45;
+        const playerFalling = player.body.velocity.y > 0;
+        return playerAbove && playerFalling;
+    }
+
+    /**
+     * Handle a pogo hit: enemy takes damage, player bounces upward.
+     * No knockback applied to enemy — the bounce is the reward.
+     */
+    _handlePogoHit(amount) {
+        if (this.invulnTimer > 0 || this.dead) return;
+        this.hp -= amount;
+        this.invulnTimer = 30;
+
+        // Player bounces up (HK-style downward strike reward)
+        if (this.scene.player && !this.scene.player.dead) {
+            this.scene.player.body.setVelocityY(-280);
+        }
+
+        // Brief flash (shorter than normal hit)
+        this.sprite.setTint(0xffffff);
+        this.scene.time.delayedCall(60, () => {
+            if (this.sprite && this.sprite.active && !this.dead) this.sprite.clearTint();
+        });
+
+        this.scene.sound.play('sfx_enemy_hurt', { volume: 0.5, detune: 200 });
+
+        if (this.hp <= 0) {
+            this.die();
+        }
+    }
+
+    /* ================================================================== */
     /*  Leash / Return-to-Spawn                                              */
     /* ================================================================== */
 
@@ -115,6 +160,9 @@ class Enemy {
     _startReturnHome() {
         this.isReturning = true;
         this.body.setVelocity(0, 0);
+        // Visual signal: dim blue tint + reduced alpha to indicate leashing
+        this.sprite.setTint(0x4466aa);
+        this.sprite.setAlpha(0.8);
         this._onStartReturn();
     }
 
@@ -137,6 +185,8 @@ class Enemy {
                 this.body.setVelocityY(0);
             }
             this.isReturning = false;
+            this.sprite.clearTint();
+            this.sprite.setAlpha(1);
             this._onReachedHome();
             return;
         }
@@ -180,6 +230,14 @@ class Enemy {
      */
     takeDamage(amount, knockbackX, knockbackY, hitstunFrames = 8) {
         if (this.invulnTimer > 0 || this.dead) return;
+
+        // ── Pogo check: player above & falling → bounce, no knockback ──
+        const player = this.scene.player;
+        if (player && this._isPogoHit(player)) {
+            this._handlePogoHit(amount);
+            return;
+        }
+
         this.hp -= amount;
         this.invulnTimer = 30; // 0.5s i-frames
 

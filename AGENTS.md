@@ -31,11 +31,13 @@ sekai_game/
 │   │   └── BossMafuyu.js   # Boss 真冬（2阶段 AI：近战/冲刺/解放俯冲，绝望模式）
 │   │
 │   ├── enemies/
-│   │   ├── Enemy.js         # 敌人基类（受击、无敌帧、死亡粒子、可扩展）
-│   │   ├── ShadowFragment.js # 地面巡逻+追击型敌人
-│   │   ├── FloatingShard.js  # 悬浮漂移型敌人（无重力）
-│   │   ├── Bat.js            # 蝙蝠：巡逻→追击→撤退 AI，正弦摆动飞行
-│   │   └── Skeleton.js       # 骷髅：巡逻→接近→近战攻击，带前摇/判定/后摇
+│   │   ├── Enemy.js             # 敌人基类（受击、无敌帧、死亡粒子、pogo检测）
+│   │   ├── ShadowFragment.js    # HK式：120px leash，Quick Pounce+Rush双攻击
+│   │   ├── FloatingShard.js     # HK式：120px leash，Quick Burst+Cross Barrage
+│   │   ├── Bat.js               # HK式：150px leash，Swoop+Dive双攻击模式
+│   │   ├── Skeleton.js          # HK式：120px leash，Shield Bash+Melee+Backstep
+│   │   ├── BloatedShadow.js     # HK式：150px leash，Slam+Sweep+child spawn
+│   │   └── WandererCrystal.js   # HK式：160px leash，Laser+Pulse Burst
 │   │
 │   ├── systems/
 │   │   ├── Bench.js          # 长椅：恢复+保存点，程序化图形渲染
@@ -53,8 +55,9 @@ sekai_game/
 │   │   └── CreditsScene.js   # 滚动致谢名单
 │   │
 │   └── ui/
-│       ├── PauseMenu.js      # 暂停菜单（Resume/Main Menu/Fullscreen/Language/主音量滑块）
-│       └── MapView.js        # 地图系统（M 键打开，区域探索状态、POI 标记、玩家位置）
+│       ├── PauseMenu.js      # 暂停菜单（Resume/Status/Save/MainMenu/Fullscreen/Language/主音量滑块）
+│       ├── MapView.js        # 地图系统（M 键打开，HK风格房间图、平台简图、方向箭头、图例、POI标记）
+│       └── CharacterPanel.js # 角色信息面板（Tab/暂停菜单打开，HP/Feelings/能力/地图进度/战斗统计）
 │
 ├── scripts/                  # 开发工具脚本
 │   └── generate-tilemaps.js  # 从 RoomDef 数据生成 Tiled .tmj 地图文件
@@ -66,7 +69,7 @@ sekai_game/
 │   │   ├── player_mfy/       # 玩家 Mafuyu 动画帧
 │   │   ├── boss2_mfy/        # Boss Mafuyu 各状态帧
 │   │   └── enemies/          # 已下载 625+ 像素敌人素材（待替换程序化纹理）
-│   ├── maps/                 # Tiled .tmj 地图文件（8 房间）
+│   ├── maps/                 # Tiled .tmj 地图文件（9 房间）
 │   │   ├── room_intro.tmj
 │   │   ├── room_ascent.tmj
 │   │   └── ...
@@ -92,6 +95,7 @@ sekai_game/
 | 冲刺 | L |
 | 望远 | 长按 W / S |
 | 地图 | M |
+| 角色面板 | Tab |
 | 暂停 | ESC / P |
 | 菜单导航 | ↑↓ / W S |
 | 菜单确认 | J / Space / Enter |
@@ -111,7 +115,7 @@ BootScene → MenuScene → GameScene ←→ BossScene (叠加层)
 ```
 - **BootScene**：加载所有资源 + 程序化纹理 + 玩家跑步动画
 - **MenuScene**：粒子背景，NEW GAME / CONTINUE（有存档时激活）/ CREDITS
-- **GameScene**：**房间式架构**，8 房间（960×720，竖井 720×960），自动等比填充游戏分辨率，房间过渡渐变黑→淡入，所有对象按房间构建/销毁。Tilemap .tmj 驱动所有几何/对象数据，RoomDef 只保留元数据
+- **GameScene**：**房间式架构**，9 房间（960×720，竖井 720×960），自动等比填充游戏分辨率，房间过渡渐变黑→淡入，所有对象按房间构建/销毁。Tilemap .tmj 驱动所有几何/对象数据，RoomDef 只保留元数据
 - **BossScene**：叠加层模式，2 阶段 Boss 战，胜利/死亡回调
 - **CreditsScene**：自动滚动致谢，J 跳过/返回
 
@@ -129,27 +133,30 @@ BootScene → MenuScene → GameScene ←→ BossScene (叠加层)
 ### 敌人系统
 | 类型 | HP | 接触伤害 | Feelings 掉落 | 行为 |
 |------|----|---------|--------------|------|
-| ShadowFragment | 3 | 5 | +2 | 地面巡逻→追击→返回 |
-| FloatingShard | 4 | 8 | +5 | 悬浮漂移→漂移追击 |
-| Bat | 3 | 6 | +3 | 正弦飞行→追击→撤退 |
-| Skeleton | 8 | 3(体)/12(攻) | +8 | 巡逻→接近→近战攻击 |
-| Boss Mafuyu | 300 | 5(体)/12~20(攻) | — | 2 阶段 AI |
+| ShadowFragment | 12 | 1 | +2 | HK式120px leash，Ambush→Alert→Pounce/Rush→Daze，受击分裂 |
+| FloatingShard | 15 | 1 | +5 | HK式120px leash，Hover→Drift→Homing/Quick Burst→Recover |
+| Bat | 8 | 1 | +3 | HK式150px leash，Patrol→Chase→Swoop→Dive→Recover |
+| Skeleton | 25 | 1 | +8 | HK式120px leash，Patrol→Approach→Bash/Melee→Backstep，35%格挡，≤5HP怒 |
+| BloatedShadow | 18 | 3 | +8 | HK式150px leash，Chase→Slam→Sweep→Vulnerable，4s生成分身 |
+| WandererCrystal | 10 | 1 | +6 | HK式160px leash，Aim→Laser/Pulse Burst→Cooldown |
+| Boss Mafuyu | 600 | 5 | — | 2 阶段 AI + 绝望模式 |
 
 ### 探索系统
 - **长椅**（4个）：恢复 HP/Feelings + 保存 + 重置敌人
 - **NPC**（2个）：打字机效果对话，25-ji 风格剧情
 - **收集物**：HP 上限提升（+10）、Feelings 上限提升（+50）、治疗球（+30 HP）
-- **能力道具**：冲刺（x=2000）、二段跳（x=3200）、剑（x=2500）
-- **能力门**：3 道紫色屏障（冲刺/二段跳/冲刺）
-- **地图**：M 键打开，7 区域探索追踪，POI 标记
+- **能力道具**：冲刺（lower）、二段跳（preboss）、剑（mid）
+- **能力门**：3 道紫色屏障（dash/shadowCloak/doubleJump）
+- **地图**：M 键打开，9 区域探索追踪，POI 标记，平台简图，方向箭头
 - **地图呈现基线**：保持房间图式，但视觉要克制，节点/连线/当前房间提示需接近 HK 的信息密度，不再回到“世界大地图”表达
 - **跳跃手感基线**：当前跳跃以 HK 为参考，重点是更低的起跳高度、更快的下落、更明确的松键截断，不要改回漂浮型跳跃
 - **单向门**：x=1600，阻止从左向右穿行
 
 ### UI 系统
 - **HUD**：心形血条（10 格）、Feelings 条、Boss 血条、连击显示（RESONANCE ×N）、能力图标
-- **暂停菜单**：Resume / Main Menu / Fullscreen 切换 / Language 切换 / 主音量滑块
-- **地图**：区域颜色区分（已探索/未探索），平台简图，POI 标记
+- **暂停菜单**：Resume / Status / Save / Main Menu / Fullscreen 切换 / Language 切换 / 主音量滑块
+- **地图**：区域颜色区分（已探索/未探索），平台简图，POI 标记，方向箭头，图例
+- **角色面板**：Tab 键打开，显示 HP/Feelings/能力/地图进度/战斗统计
 
 ### 存档系统
 - **方式**：localStorage，5 槽位 `sekai_save_0` ~ `sekai_save_4`
@@ -178,9 +185,9 @@ BootScene → MenuScene → GameScene ←→ BossScene (叠加层)
 - [x] 主菜单（粒子、标题、菜单动画、键盘导航）
 - [x] 玩家 Mafuyu（idle/run/jump/attack1~3/air/dash/doubleJump/hurt/dead）
 - [x] 完整 3 段地面连击 + 剑技升级系统
-- [x] 4 种敌人（ShadowFragment / FloatingShard / Bat / Skeleton）+ 基类
+- [x] 6 种敌人（ShadowFragment / FloatingShard / Bat / Skeleton / BloatedShadow / WandererCrystal）+ 基类 + Boss Mafuyu
 - [x] Boss Mafuyu 2 阶段 + 绝望模式
-- [x] 房间式架构（8 房间，RoomDef.js 驱动，过渡渐黑淡入）
+- [x] 房间式架构（9 房间，RoomDef.js 驱动，过渡渐黑淡入）
 - [x] 4400×600 世界 → 已重构为房间式架构（960×720/房间）
 - [x] 长椅休息+保存系统（4 个长椅）
 - [x] NPC 对话系统（2 个 NPC，打字机效果）
@@ -220,6 +227,7 @@ BootScene → MenuScene → GameScene ←→ BossScene (叠加层)
 - [x] 友方 NPC 对话框已改为视口固定 UI，避免随相机 zoom 变大、模糊或超出视角；不要再改回跟随世界缩放的做法
 - [x] 友方 NPC 对话框必须固定在屏幕底部 UI 层，不能缩放到世界相机里，否则会因为 zoom 导致看不见或发虚
 - [x] 友方 NPC 对话框现在挂在 `HUDScene`，不得再放回 `GameScene` 的世界层；显示、隐藏、换行都由 HUD 负责
+- [x] 骷髅敌人已改为拆 GIF 逐帧动画（idle/run/attack/death），并且朝向以“面向右侧”为基准；体型要比当前更小，生成点要上移 8px，攻击必须用前方扇面命中且不要再做镜头抖动，不要回退到 `skeleton-Sheet` 的错误切帧或把右侧文字区当成姿势帧
 - [x] 血量 HUD 已放大并增加更强的轮廓/发光感，读档后必须通过 `HUDScene.refreshFromPlayer()` 立即重画，不要只改数值不刷新显示
 - [x] `HUDScene` 可能晚于 `GameScene` 完成初始化，读档后的 HUD 刷新必须支持延迟补绘，不能依赖启动顺序
 - [x] 存档槽里的血量展示必须使用 `ui_hp_mask`，不要再用旧的程序化心形图形
@@ -240,9 +248,14 @@ BootScene → MenuScene → GameScene ←→ BossScene (叠加层)
 - [x] **所有房间装饰移除**：8 房间 `decorations: {}` + TMJ 再生
 - [x] **NPC 安全区**：ascent/mid 房间最近敌人从 x=240 移到 x=360
 - [x] **可破坏墙系统**：HK 式攻击击碎屏障，6 HP，3 级裂缝渐进 + 粒子 + 震屏 + 持久化存档
+- [x] **敌人 AI HK 化大改**：所有 6 种敌人 leash 收紧至 120-160px，2+ 攻击模式（Pounce/Rush、Cross Barrage/Quick Burst、Swoop/Dive、Shield Bash/Melee、Slam/Sweep、Laser/Pulse Burst），pogo 支持、telegraph 规范、retreat/recover 行为
+- [x] **视觉适配**：6 个新程序化 VFX 纹理（fx_pounce_tell/fx_sweep_arc/fx_bash_impact/fx_pulse_ring/fx_quick_burst_proj/fx_swoop_trail）+ 每种新攻击的粒子效果 + 标准化状态色调
+- [x] **新房间"THE VOID"**：secret→void→lower 捷径，7 个盘旋平台，1 WandererCrystal + 1 ShadowFragment
+- [x] **地图 UI 重设计**：HK 风格房间微型轮廓、方向箭头、POI 系统（6 种类型）、图例、玩家标记增强（脉冲发光+面向指示）、打开/关闭动画
+- [x] **角色信息面板**：Tab/暂停状态打开，显示 VESSEL/FEELINGS/ABILITIES/MAP/COMBAT 信息
+- [x] **三个已知 BUG 已修复**：mid→shaft UP出口可达、能力门阻挡主线、secret 房间可进入（新增 void 房间作为出口）
 - [ ] **Feelings 特殊攻击**：消耗 50 Feelings 的大范围斩击（已设计，待实现）
 - [ ] **玩家跳跃/落地动画**：squash & stretch
-- [ ] **HK 化继续微调**：如果继续调手感，只允许围绕跳跃高度、起跳截断、落地停顿、空中加速度做小幅迭代
 - [ ] **Boss 攻击纹理修复**：`melee_active` 应显示 `boss_melee1` 而非 `boss_attack`
 - [ ] **更多敌人类型**（从 625+ 素材中选择 3-5 种）
 - [ ] **世界状态变化**：Boss 击败后的场景变化
@@ -297,44 +310,25 @@ BootScene → MenuScene → GameScene ←→ BossScene (叠加层)
 18. ✅ **spawn 坐标校准 +24px**：exit.y 624 / exit.targetY 660 / NPC y 660
 19. ✅ **全部 JS 文件 node --check 通过**，8 TMJ 文件有效 JSON
 
-**Sprint 8（当前）- 平台布局重新设计 + 可破坏墙系统：**
-1. ✅ **8 房间全平台重新设计**：由 level-designer agent 全面分析 + 手动重写所有平台坐标，满足约束（≤5 连续台阶、台阶间距≤跳跃距离 1.5x、无死路、充分利用上半空间）
-   - intro：3 个教程平台（跳跃教学、治疗球、战斗）
-   - ascent：5 步台阶→着陆→2 步下降→上层秘密路径（64px 跳跃，治疗球）
-   - secret：不变（全高锯齿 T=41→11，垂直利用率 65%）
-   - lower：5 步台阶→跑道→可破坏墙（唯一路径，上链已移除，hp_up 移至跑道上方壁龛）
-   - mid：清除冗余收集物平台，feeling alcove 上方十字通道
-    - shaft：5 层宽幅楼板结构（每层 2 块大 slab + 交替缺口），移动平台电梯代替右侧楼梯，敌人在缺口徘徊
-   - preboss：入口→3 步下降→3 步上升→Boss 接近→上层到 R7
-   - boss：不变（简单竞技场）
-2. ✅ **lower 单向门替换为可破坏墙**：
-   - 新增 `src/systems/DestructibleWall.js` — HK 式可破坏屏障
-   - 6 HP，用基础攻击 2 击碎，带裂缝渐进（3 级）、粒子爆发、屏幕震动/闪白
-   - 物理碰撞区阻挡前行，slashHitbox overlap 检测攻击
-   - 持久化存档（`destroyedWalls[]` 保存/读取），销毁后房间切换不重生
-   - **唯一路径**：删除上层秘密路径（7 平台），hp_up 移至跑道上方壁龛（R28），墙堵死跑道间隙 → 玩家必须击碎墙才能到达右出口
-3. ✅ **所有 TMJ 再生验证**：`node scripts/generate-tilemaps.js` → 8/8 ✓
-4. ✅ **全部 JS 文件通过 `node --check`**：全部 src/ + scripts/ 语法通过
-5. ✅ **index.html 添加 DestructibleWall.js 加载**
-6. ✅ **修复墙路径问题**：原墙位于平台层（y=448），但右出口在地面层（y=624），玩家可沿地面从 x=0 走到 x=954 直接离开 lower 室，完全绕过墙。修复方案：
-    - 将右出口（→ mid）从地面（x=954, y=624）移至平台层（x=840, y=460, 40px 高，覆盖玩家站立在平台 y=480 时的身体区域）
-    - 墙宽 w=32→48（缩放后 64px），高 h=64→80（覆盖 y=408-488，坐在跑道表面 y=480 上，玩家无法跳过）
-    - 左跑道扩展至 w=1.50（6  tiles = 96px，一直铺到墙左沿 x=992），消除起跳空间
-    - 右跑道保持 x=816, w=0.50（32px 间隙，击碎墙后轻松跳过）
-7. ✅ **修复 preboss 平行台阶**：移除 x=792, y=376（hp_up 搁架），合并到 x=720, y=376, w=1.50（ascent 2 从 3 tiles 扩展为 6 tiles），保持唯一下降/上升 V 形路径
-8. ✅ **竖井改为宽幅楼板结构 + 移动平台电梯**：10 块宽大 slab（每块 192-352px）替代全部窄平台，缺口交替（192-288 / 288-384）允许有意识坠落；右侧 8 步楼梯改为移动平台电梯（x=600, 96px 宽, 448px 行程），边角楼梯（2 左 + 3 恢复）窄小不占主空间
-9. ✅ **移除 secret→shaft 捷径**：删除 secret 房间的 UP 出口（targetRoom: 'shaft'），secret 变为单出口死胡同
-10. ❌ 全流程游戏内验证（房间过渡 → 可破坏墙 → 能力门 → Boss → 存档/读档）
-11. ❌ Boss attack 纹理修复（`melee_active` → `boss_melee1`）：等待用户提供素材
+**Sprint 8 - 平台布局重新设计 + 可破坏墙系统（已完成）：**
+1. ✅ **8 房间全平台重新设计**
+2. ✅ **lower 单向门替换为可破坏墙**
+3. ✅ **所有 TMJ 再生验证**
+4. ✅ **全部 JS 文件通过 `node --check`**
+5. ✅ **三个已知 BUG 修复**：mid→shaft出口可达、能力门阻挡主线、secret 房间可进入（新增 void 房间）
+
+**Sprint 9（当前）- 敌人 AI HK 化大改 + 新房间 + UI 重设计：**
+1. ✅ **敌人 AI HK 化大改**：所有 6 种敌人 leash 收紧至 120-160px，2+ 攻击模式（Pounce/Rush、Cross Barrage/Quick Burst、Swoop/Dive、Shield Bash/Melee、Slam/Sweep、Laser/Pulse Burst），pogo 支持、telegraph 规范、retreat/recover 行为
+2. ✅ **视觉适配**：6 个新程序化 VFX 纹理 + 每种新攻击的粒子效果 + 标准化状态色调
+3. ✅ **怪物布局重新平衡**：所有 8 房间敌人重排，符合 HK 风格放置原则（2-4/房间，混合空地，围绕地形放）
+4. ✅ **新房间"THE VOID"**：secret→void→lower 捷径，7 个盘旋平台，1 WandererCrystal + 1 ShadowFragment
+5. ✅ **地图 UI 重设计**：HK 风格房间微型轮廓、方向箭头、POI 系统（6 种类型）、图例、玩家标记增强（脉冲发光+面向指示）、打开/关闭动画
+6. ✅ **角色信息面板**：Tab/暂停状态打开，显示 VESSEL/FEELINGS/ABILITIES/MAP/COMBAT 信息
+7. ❌ 全流程游戏内验证（房间过渡 → 可破坏墙 → 能力门 → Boss → 存档/读档）
+8. ❌ Boss attack 纹理修复（`melee_active` → `boss_melee1`）：等待用户提供素材
 
 ### 🔴 已知 BUG（待修复）
-- **mid→shaft UP 出口不可达**：mid 房间 UP 出口（x=600, y=0）在房间顶部，但最高平台表面在 y=208（行 13），跳跃最高点 y=132，距离出口 y=0 还有 132px 差距，玩家永远无法触发该出口。出口需下移至可达高度或删除。当前不影响流程（可从 shaft→mid 单向进入）。
-- **能力门未真正阻挡主线**：
-  - `dash` 默认为 `true`（存档加载：`!== undefined ? !!data.abilities.dash : true`），mid 的 dash 门永远是开着的
-  - mid 第一个能力物品给 `shadowCloak`（冲刺攻击），不是 `dash`（冲刺移动）——两个不同的能力键
-  - preboss 两个能力门（`doubleJump` 和 `shadowCloak`）位置在左右墙角，玩家走中路去 Boss 出口完全不经过它们
-  - **根因**：`Player.js` 保存/加载中 `abilities.dash` 默认 `true`，其余能力默认 `false`；能力门检查键与物品给予键不对应。建议方案：将 dash 默认改为 `false`，在 lower 添加 dash 能力物品，mid 的门检查 `dash`。
-- **secret 房间不可进入**：secret 只有离开出口（→ascent），没有房间能进入 secret，该房间为死内容。
+- **Boss 攻击纹理**：`melee_active` 状态使用 `boss_attack` 纹理而非 `boss_melee1`（需用户提供素材）
 
 ## 🤖  AI 协作指南
 - **最高优先级**：以 `AGENTS.md` 为项目状态唯一 Source of Truth
@@ -356,20 +350,22 @@ BootScene → MenuScene → GameScene ←→ BossScene (叠加层)
 
 ---
 
-**最后更新时间**：2026-06-28（竖井统一缺口 240-336 + 电梯居中填补缺口 + 楼梯错位指向缺口）
+**最后更新时间**：2026-06-29（Sprint 9 完成：6 种敌人 AI HK 化、新房间 THE VOID、地图 UI 重设计、角色信息面板）
 **维护者**：lidure
 
 ## Relevant Files
-- `scripts/generate-tilemaps.js`：单数据源（ROOMS 字典含所有 8 房间的平台/出口/spawn 数据），所有装饰已清除，所有 benches: []；TMJ 再生 `node scripts/generate-tilemaps.js`
+- `scripts/generate-tilemaps.js`：单数据源（ROOMS 字典含所有 9 房间的平台/出口/spawn 数据），所有装饰已清除，所有 benches: []；TMJ 再生 `node scripts/generate-tilemaps.js`
 - `src/scenes/GameScene.js`：`_buildRoom` tilemap 加载；地面层 `TILE_OFFSET_Y + 8` offset；platform layer y=0（无偏移），碰撞=visual=row×16；damage 值已重平衡；bench/rest 代码已删除
-- `src/scenes/BootScene.js`：preload 加载 8 个 tilemap JSON + 7 个 16×16 地面纹理
-- `src/entities/Player.js`：跳跃 -280；body 18×26 @ scale 0.85；air attack 无 velocity 限制/上限钳制
-- `src/systems/NPC.js`：`_recalcBox()` 将 box 位置/尺寸除以 `cameras.main.zoom`，对话框在 zoom 2.6×/1.6×/1.3× 下均可见
+- `src/scenes/BootScene.js`：preload 加载 9 个 tilemap JSON + 7 个 16×16 地面纹理 + 6 个 VFX 程序化纹理
+- `src/entities/Player.js`：跳跃 -280；body 18×26 @ scale 0.85；air attack 无 velocity 限制/上限钳制；dash 默认 false
+- `src/systems/NPC.js`：`_recalcBox()` 将位置/尺寸除以 `cameras.main.zoom`，对话框在 zoom 2.6×/1.6×/1.3× 下均可见
 - `src/systems/NPC.js`：友方 NPC 使用 `knd` 素材，支持 `wander` / `stand` 行为，保持对话系统不变
-- `src/systems/RoomDef.js`：精简元数据 + CONNECTIONS 表
-- `src/ui/MapView.js`：使用 `RoomDef.CONNECTIONS` + 常量宽高
+- `src/systems/RoomDef.js`：精简元数据 + CONNECTIONS 表 + mapPOIs
+- `src/ui/MapView.js`：使用 `RoomDef.CONNECTIONS` + 常量宽高 + 平台简图 + 方向箭头 + 图例 + 打开/关闭动画
+- `src/ui/CharacterPanel.js`：角色信息面板（VESSEL/FEELINGS/ABILITIES/MAP/COMBAT）
+- `src/ui/PauseMenu.js`：暂停菜单含 Status 选项
 - `src/ui/SaveSlotPicker.js`：5 存档槽选择器，暂停菜单 SAVE + 主菜单 LOAD GAME 共用
 - `src/systems/DestructibleWall.js`：可破坏墙（HK 式），攻击破坏，3 级裂缝 + 粒子爆发 + 持久化存档
 - `src/systems/MovingPlatform.js`：移动平台电梯，垂直载人升降（shaft 房间 x=600, 96px 宽, 448px 行程, 60px/s）
-- `assets/maps/*.tmj`：8 房间，16×16 网格，平台 row T（TMJ y=0，无 -16 偏移），无装饰/长椅对象
+- `assets/maps/*.tmj`：9 房间，16×16 网格，平台 row T（TMJ y=0，无 -16 偏移），无装饰/长椅对象
 - `src/i18n.js`：本地化系统，中英文词典，localStorage 持久化语言设置，暂停菜单 LANGUAGE 切换

@@ -82,7 +82,7 @@ class PauseMenu {
 
         // Panel dimensions
         const pW = 384;
-        const pH = 378;
+        const pH = 420;
         const px = (W - pW) / 2;
         const py = (H - pH) / 2 - 10;
         const cx = W / 2;
@@ -164,6 +164,7 @@ class PauseMenu {
         /* ---- Menu items ---- */
         const itemDefs = [
             { labelKey: 'resume',        action: 'resume' },
+            { labelKey: 'status',        action: 'status' },
             { labelKey: 'save',          action: 'save' },
             { labelKey: 'returnToMenu',  action: 'mainMenu' },
             { labelKey: 'fullscreen',    action: 'fullscreen' },
@@ -233,7 +234,7 @@ class PauseMenu {
 
         /* ---- Fullscreen indicator ---- */
         // "[ON]" or "[OFF]" shown at the right edge of the FULLSCREEN row
-        this.fsText = this.scene.add.text(px + pW - 20, startY + 3 * gap, '', {
+            this.fsText = this.scene.add.text(px + pW - 20, startY + 4 * gap, '', {
             fontSize: '14px',
             fontFamily: 'monospace',
             color: '#7FE0DE',
@@ -241,7 +242,7 @@ class PauseMenu {
         this.container.add(this.fsText);
 
         /* ---- Language indicator ---- */
-        this.langText = this.scene.add.text(px + pW - 20, startY + 4 * gap, '', {
+            this.langText = this.scene.add.text(px + pW - 20, startY + 5 * gap, '', {
             fontSize: '14px',
             fontFamily: 'monospace',
             color: '#7FE0DE',
@@ -249,7 +250,7 @@ class PauseMenu {
         this.container.add(this.langText);
 
         /* ---- Master volume slider ---- */
-        this._buildSlider(cx, startY + 5 * gap);
+        this._buildSlider(cx, startY + 6 * gap);
 
         /* ---- Confirmation dialog (hidden until triggered) ---- */
         this._buildConfirmation();
@@ -415,6 +416,12 @@ class PauseMenu {
     _buildKeyboard() {
         this._toggleHandler = (event) => {
             if (this.destroyed) return;
+            // Character panel open → close it instead of toggling pause
+            if (this.scene.characterPanel && this.scene.characterPanel.isOpen) {
+                this.scene.characterPanel._close();
+                if (event) event.preventDefault();
+                return;
+            }
             // Save picker open → route ESC to picker
             if (this.savePicker && !this.savePicker.destroyed) {
                 this.savePicker._cancel();
@@ -445,7 +452,7 @@ class PauseMenu {
                 if (event) event.preventDefault();
                 return;
             }
-            if (this.isOpen && this.inputEnabled && !this.confirmMode && this.selectedIndex === 5) {
+            if (this.isOpen && this.inputEnabled && !this.confirmMode && this.selectedIndex === 6) {
                 this._adjustVolume(-0.05);
                 if (event) event.preventDefault();
                 return;
@@ -476,7 +483,7 @@ class PauseMenu {
         // Confirm / execute
         this._confirmAction = () => {
             if (!this._canInteract()) return;
-            if (!this.confirmMode && this.selectedIndex === 5) {
+            if (!this.confirmMode && this.selectedIndex === 6) {
                 this._adjustVolume(0.05);
                 return;
             }
@@ -713,7 +720,7 @@ class PauseMenu {
     /* ================================================================== */
 
     _updateHelpText() {
-        if (this.selectedIndex === 5) {
+        if (this.selectedIndex === 6) {
             this.helpText.setText(Lang.t('helpPauseMaster'));
         } else {
             this.helpText.setText(Lang.t('helpNav'));
@@ -749,6 +756,12 @@ class PauseMenu {
         switch (item.action) {
             case 'resume':
                 this._close();
+                break;
+            case 'status':
+                this._close();
+                if (this.scene.characterPanel) {
+                    this.scene.characterPanel.toggle();
+                }
                 break;
             case 'save':
                 this._openSavePicker();
@@ -889,8 +902,8 @@ class PauseMenu {
     _adjustVolume(delta) {
         if (!this.inputEnabled) return;
 
-        // Only respond when MASTER (index 5) is selected and we're not in confirm mode
-        if (this.selectedIndex !== 5 || this.confirmMode) return;
+        // Only respond when MASTER (index 6) is selected and we're not in confirm mode
+        if (this.selectedIndex !== 6 || this.confirmMode) return;
 
         AudioSettings.set('master', AudioSettings.get('master') + delta);
         this._drawSlider();

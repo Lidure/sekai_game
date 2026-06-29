@@ -1,22 +1,26 @@
 /**
- * Bat — Flying patrol/pursuit enemy with DIVE attack.
+ * Bat — Flying patrol/pursuit enemy with DIVE + SWOOP attacks.
  *
- * State machine:
+ * HK-style state machine:
  *   PATROL  → sine-wave horizontal oscillation ±50px from origin at 30px/s,
  *              bob up/down ±8px with 1.5s period
- *           → player within 120px horizontally → CHASE
- *   CHASE   → track player at 55px/s with Y-bobbing
- *           → player within 40-100px for >2s → PULL_UP
+ *           → player within 100px horizontally → CHASE
+ *   CHASE   → track player at 70px/s with Y-bobbing
+ *           → player within 40-100px for >2s → PULL_UP (or SWOOP)
  *           → player closer than 40px or beyond 180px → RETREAT
- *   PULL_UP → rapid rise toward screen ceiling, pink glow 0.4s tell
- *           → reaches y ≈ 80px → DIVE
- *   DIVE    → fast diagonal rush at player (200px/s)
- *           → hits floor or player dodges → RECOVER
- *   RECOVER → 0.3s stagger on floor → CHASE
+ *           → player facing away & < 100px → SWOOP (cooldown 2s)
+ *   SWOOP   → quick diagonal sweep (0.2s telegraph, no pull-up)
+ *           → 140px/s toward player, 1 damage
+ *           → sweeps across, then RECOVER
+ *   PULL_UP → rapid rise toward screen ceiling (y ≈ 120px), pink glow 0.4s tell
+ *           → reaches ceiling → DIVE
+ *   DIVE    → fast diagonal rush at player (250px/s)
+ *           → hits floor → RECOVER
+ *   RECOVER → 0.5s stagger on floor, slight backward shuffle → CHASE
  *   RETREAT → fly away from player at 40px/s for 1s → PATROL
  *
- * Narrative: A predatory thought — it circles, baits, then strikes
- *            without warning.
+ * POGO: N/A (flying enemy, but dive can be avoided by pogo-like downward strike)
+ * LEASH: tightened to 150px
  */
 class Bat extends Enemy {
     constructor(scene, x, y) {
@@ -28,8 +32,8 @@ class Bat extends Enemy {
             bodyWidth: 220,
             bodyHeight: 240,
             noGravity: true,
-            leashDistance: 250,
-            returnSpeed: 50,
+            leashDistance: 150,
+            returnSpeed: 60,
         });
 
         this.sprite.setScale(0.14);
@@ -38,12 +42,14 @@ class Bat extends Enemy {
         this.originX = x;
         this.originY = y;
         this.patrolSpeed = 30;
-        this.chaseSpeed = 55;
+        this.chaseSpeed = 70;        // increased from 55
         this.retreatSpeed = 40;
-        this.diveSpeed = 200;
+        this.diveSpeed = 250;        // increased from 200
+        this.swoopSpeed = 140;       // new
         this.state = 'patrol';
         this.stateTimer = 0;
         this.chaseTimer = 0;
+        this._swoopCooldown = 0;
 
         // Visual cleanup
         this._gfxToCleanup = [];
@@ -63,6 +69,8 @@ class Bat extends Enemy {
         const time = this.scene.time.now / 1000;
         const dtSec = dt / 1000;
 
+        if (this._swoopCooldown > 0) this._swoopCooldown -= dtSec;
+
         const vx = this.body.velocity.x;
         if (Math.abs(vx) > 5) {
             this.sprite.setFlipX(vx > 0);
@@ -73,7 +81,7 @@ class Bat extends Enemy {
                 this.body.setVelocityX(Math.sin(time * 0.8) * this.patrolSpeed);
                 this.body.setVelocityY(Math.cos(time * (Math.PI * 2 / 1.5)) * 34);
 
-                if (absDist < 120) {
+                if (absDist < 100) {
                     this.chaseTimer = 0;
                     this.state = 'chase';
                 }
@@ -84,6 +92,12 @@ class Bat extends Enemy {
                 this.chaseTimer += dtSec;
                 this.body.setVelocityX(Math.sign(dist) * this.chaseSpeed);
                 this.body.setVelocityY(Math.cos(time * (Math.PI * 2 / 1.2)) * 42);
+
+                // SWOOP check: player facing away, close, cooldown ready
+                if (absDist < 100 && this._swoopCooldown <= 0 && this._playerFacingAway()) {
+                    this._enterSwoop(playerX, playerY);
+                    break;
+                }
 
                 if (absDist < 40) {
                     this.chaseTimer = 0;
@@ -105,9 +119,33 @@ class Bat extends Enemy {
                 break;
             }
 
+            /* ———— SWOOP (new) ———— */
+            case 'swoop_telegraph': {
+                this.body.setVelocity(0, 0);
+                this.stateTimer -= dtSec;
+                // Visual: pink pulse flash
+                const glow = Math.sin(time * 16) * 0.3 + 0.7;
+                this.sprite.setAlpha(glow);
+                this.sprite.setTint(0xff88cc);
+                if (this.stateTimer <= 0) {
+                    this._executeSwoop(playerX, playerY);
+                }
+                break;
+            }
+
+            case 'swoop': {
+                // Maintain velocity set on entry; check for floor or timeout
+                this.stateTimer -= dtSec;
+                if (this.stateTimer <= 0 || this.body.blocked.down) {
+                    this._swoopCooldown = 2.0;
+                    this._enterSwoopRecover();
+                }
+                break;
+            }
+
             case 'pull_up': {
-                // Rapidly rise toward ceiling
-                const ceilingY = 80;
+                // Rapid rise toward ceiling
+                const ceilingY = 120;   // increased from 80 for steeper dive
                 this.body.setVelocity(0, -120);
 
                 // Pink glow telegraph
@@ -121,8 +159,6 @@ class Bat extends Enemy {
             }
 
             case 'dive': {
-                // Maintain dive velocity (set on entry)
-                // Check for ground hit
                 if (this.body.blocked.down) {
                     this._enterRecover();
                 }
@@ -131,10 +167,13 @@ class Bat extends Enemy {
 
             case 'recover': {
                 this.stateTimer -= dtSec;
-                this.body.setVelocity(0, 0);
+                // Shuffle backward slightly while recovering
+                this.body.setVelocity(Math.sign(-dist) * 20, -20);
                 this.sprite.setAlpha(0.6);
+                this.sprite.setTint(0x5577aa); // recovery: blue tint
                 if (this.stateTimer <= 0) {
                     this.sprite.setAlpha(1);
+                    this.sprite.clearTint();
                     this.chaseTimer = 0;
                     this.state = 'chase';
                 }
@@ -152,6 +191,87 @@ class Bat extends Enemy {
                 break;
             }
         }
+    }
+
+    /* ================================================================== */
+    /*  Helper — check if player is facing away from the bat                */
+    /* ================================================================== */
+
+    _playerFacingAway() {
+        const player = this.scene.player;
+        if (!player || player.dead) return false;
+        // Determine player facing direction from flipX
+        const playerFacingRight = !player.sprite.flipX;
+        // If bat is left of player and player faces right → facing away
+        // If bat is right of player and player faces left → facing away
+        const batIsLeft = (player.x - this.x) > 0;
+        return batIsLeft === playerFacingRight;
+    }
+
+    /* ================================================================== */
+    /*  SWOOP PHASES (new)                                                   */
+    /* ================================================================== */
+
+    _enterSwoop(playerX, playerY) {
+        this.state = 'swoop_telegraph';
+        this.stateTimer = 0.2; // Quick telegraph
+        this.chaseTimer = 0;
+        this.body.setVelocity(0, 0);
+        this.sprite.setTint(0xff88cc);
+        this.sprite.setAlpha(1);
+
+        // Quick pink flash (no expanding ring — this is fast)
+        this.scene.sound.play('sfx_enemy_attack', { volume: 0.4, detune: -300 });
+
+        // ── Pink glow trailing particles ──
+        for (let i = 0; i < 3; i++) {
+            const glow = this.scene.add.circle(
+                this.x - (this.sprite.flipX ? -8 : 8),
+                this.y + Phaser.Math.Between(-4, 4),
+                Phaser.Math.Between(2, 3), 0xff88cc, 0.6,
+            ).setDepth(10);
+            this._gfxToCleanup.push(glow);
+            this.scene.tweens.add({
+                targets: glow,
+                x: glow.x + Phaser.Math.Between(-10, 10),
+                y: glow.y + Phaser.Math.Between(-10, 10),
+                alpha: 0,
+                scale: 0.2,
+                duration: 400,
+                ease: 'Power2',
+                onComplete: () => {
+                    if (glow && glow.active) glow.destroy();
+                    const idx = this._gfxToCleanup.indexOf(glow);
+                    if (idx !== -1) this._gfxToCleanup.splice(idx, 1);
+                },
+            });
+        }
+    }
+
+    _executeSwoop(playerX, playerY) {
+        this.state = 'swoop';
+        this.stateTimer = 0.4;
+        this.sprite.clearTint();
+        this.sprite.setAlpha(1);
+        this.sprite.setScale(0.14);
+
+        // Diagonal sweep toward player (shallower angle than dive)
+        const angle = Math.atan2(playerY - this.y, playerX - this.x);
+        this.body.setVelocity(
+            Math.cos(angle) * this.swoopSpeed,
+            Math.sin(angle) * this.swoopSpeed,
+        );
+
+        this.scene.sound.play('sfx_enemy_attack', { volume: 0.4, detune: 50 });
+    }
+
+    _enterSwoopRecover() {
+        this.state = 'recover';
+        this.stateTimer = 0.5;
+        this.body.setVelocity(0, -20);
+        this.sprite.setAlpha(0.6);
+        this.sprite.clearTint();
+        this.sprite.setTint(0x5577aa); // recovery: blue tint
     }
 
     /* ================================================================== */
@@ -173,7 +293,7 @@ class Bat extends Enemy {
             scaleX: 5,
             scaleY: 5,
             alpha: 0,
-            duration: 600,
+            duration: 400,
             ease: 'Sine.easeOut',
             onComplete: () => {
                 if (ring && ring.active) ring.destroy();
@@ -203,9 +323,10 @@ class Bat extends Enemy {
 
     _enterRecover() {
         this.state = 'recover';
-        this.stateTimer = 0.3;
-        this.body.setVelocity(0, -30); // small bounce off floor
+        this.stateTimer = 0.5;       // increased from 0.3
+        this.body.setVelocity(0, -30);
         this.sprite.setAlpha(0.6);
+        this.sprite.setTint(0x5577aa); // recovery: blue tint
     }
 
     /* ================================================================== */
@@ -215,7 +336,7 @@ class Bat extends Enemy {
     _onStartReturn() {
         this.sprite.clearTint();
         this.sprite.setScale(0.14);
-        this.sprite.setAlpha(1);
+        this.sprite.setAlpha(0.8);
         this._gfxToCleanup.forEach(g => { if (g && g.active) g.destroy(); });
         this._gfxToCleanup = [];
     }
@@ -224,6 +345,7 @@ class Bat extends Enemy {
         this.state = 'patrol';
         this.chaseTimer = 0;
         this.stateTimer = 0;
+        this._swoopCooldown = 0;
         this.sprite.clearTint();
         this.sprite.setAlpha(1);
     }

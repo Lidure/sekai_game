@@ -11,6 +11,7 @@ class RoomDef {
             groundTexture: 'ground_intro',
             tint: { color: 0x0a0a1a, alpha: 0.25 },
             bossTrigger: false,
+            mapPOIs: [],
             mapGrid: { x: 0, y: 1 },
         },
         ascent: {
@@ -19,6 +20,7 @@ class RoomDef {
             groundTexture: 'ground_ascent',
             tint: { color: 0x0e0a20, alpha: 0.25 },
             bossTrigger: false,
+            mapPOIs: ['npc'],
             mapGrid: { x: 1, y: 1 },
         },
         secret: {
@@ -27,7 +29,16 @@ class RoomDef {
             groundTexture: 'ground_secret',
             tint: { color: 0x0a1018, alpha: 0.25 },
             bossTrigger: false,
+            mapPOIs: ['hp_up', 'feelings_up'],
             mapGrid: { x: 1, y: 0 },
+        },
+        void: {
+            id: 'void', name: 'THE VOID',
+            tilemapKey: 'room_void',
+            groundTexture: 'ground_mid',
+            tint: { color: 0x0a0010, alpha: 0.35 },
+            bossTrigger: false,
+            mapGrid: { x: 2, y: 0 },
         },
         lower: {
             id: 'lower', name: 'LOWER PATH',
@@ -35,6 +46,7 @@ class RoomDef {
             groundTexture: 'ground_lower',
             tint: { color: 0x1a0a1a, alpha: 0.25 },
             bossTrigger: false,
+            mapPOIs: ['hp_up', 'ability'],
             mapGrid: { x: 2, y: 1 },
         },
         mid: {
@@ -43,6 +55,7 @@ class RoomDef {
             groundTexture: 'ground_mid',
             tint: { color: 0x100a22, alpha: 0.25 },
             bossTrigger: false,
+            mapPOIs: ['npc', 'feelings_up', 'ability', 'gate'],
             mapGrid: { x: 3, y: 1 },
         },
         shaft: {
@@ -51,6 +64,7 @@ class RoomDef {
             groundTexture: 'ground_mid',
             tint: { color: 0x100a22, alpha: 0.2 },
             bossTrigger: false,
+            mapPOIs: ['hp_up', 'feelings_up'],
             mapGrid: { x: 3, y: 0 },
         },
         preboss: {
@@ -59,6 +73,7 @@ class RoomDef {
             groundTexture: 'ground_preboss',
             tint: { color: 0x1a0a0a, alpha: 0.25 },
             bossTrigger: false,
+            mapPOIs: ['hp_up', 'feelings_up', 'gate'],
             mapGrid: { x: 4, y: 1 },
         },
         boss: {
@@ -67,11 +82,12 @@ class RoomDef {
             groundTexture: 'ground_boss',
             tint: { color: 0x0a0018, alpha: 0.25 },
             bossTrigger: true,
+            mapPOIs: ['boss'],
             mapGrid: { x: 5, y: 0 },
         },
     };
 
-    static ROOM_ORDER = ['intro', 'ascent', 'secret', 'lower', 'mid', 'shaft', 'preboss', 'boss'];
+    static ROOM_ORDER = ['intro', 'ascent', 'secret', 'void', 'lower', 'mid', 'shaft', 'preboss', 'boss'];
 
     static get(roomId) {
         return RoomDef.ROOMS[roomId] || null;
@@ -90,7 +106,8 @@ class RoomDef {
         ['mid', 'shaft'],
         ['mid', 'preboss'],
         ['preboss', 'boss'],
-        ['secret', 'shaft'],    // shortcut
+        ['secret', 'void'],
+        ['void', 'lower'],
         ['shaft', 'ascent'],    // shortcut
     ];
 

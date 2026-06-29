@@ -58,7 +58,7 @@ class Player {
         this.dashFrameTimer = 0;
         this.dashFrameIndex = 0;
 
-        this.abilities = { dash: true, doubleJump: false, shadowCloak: false, sword: false };
+        this.abilities = { dash: false, doubleJump: false, shadowCloak: false, sword: false };
         this.dashUsedThisJump = false;
         this.dashCooldownTimer = 0;
 
@@ -1086,7 +1086,7 @@ class Player {
         if (data.feelings !== undefined) this.feelings = data.feelings;
         if (data.feelingsMax !== undefined) this.feelingsMax = data.feelingsMax;
         if (data.abilities) {
-            this.abilities.dash = data.abilities.dash !== undefined ? !!data.abilities.dash : true;
+            this.abilities.dash = data.abilities.dash !== undefined ? !!data.abilities.dash : false;
             this.abilities.doubleJump = !!data.abilities.doubleJump;
             this.abilities.shadowCloak = !!data.abilities.shadowCloak;
             this.abilities.sword = !!data.abilities.sword;

@@ -64,6 +64,7 @@
         this.load.tilemapTiledJSON('room_shaft',    'assets/maps/shaft.tmj');
         this.load.tilemapTiledJSON('room_preboss',  'assets/maps/preboss.tmj');
         this.load.tilemapTiledJSON('room_boss',     'assets/maps/boss.tmj');
+        this.load.tilemapTiledJSON('room_void',     'assets/maps/void.tmj');
 
         // 鈹€鈹€ Cave parallax backgrounds (replaces programmatic bg_far/bg_mid/bg_near) 鈹€鈹€
         this.load.image('bg_far',  'assets/images/backgrounds/cave_bg_far.png');
@@ -77,10 +78,40 @@
         this.load.image('enemy_shadow', 'assets/images/enemies/common/dark_forest_slime/Enemy_Forest_Idle_01.png');
         this.load.image('enemy_shard',  'assets/images/enemies/floating/ghost_gothicvania/Ghost1.png');
         this.load.image('enemy_bat',    'assets/images/enemies/floating/bat/Bat_Full.png');
-        this.load.spritesheet('enemy_skeleton', 'assets/images/enemies/shadow/skeleton/skeleton-Sheet.png', { frameWidth: 48, frameHeight: 56 });
+        const skeletonFrameSets = {
+            idle: 5,
+            run: 5,
+            attack: 8,
+            death: 10,
+        };
+        Object.entries(skeletonFrameSets).forEach(([pose, count]) => {
+            for (let i = 1; i <= count; i++) {
+                const frame = String(i).padStart(2, '0');
+                this.load.image(
+                    `enemy_skeleton_${pose}_${frame}`,
+                    `assets/images/enemies/shadow/skeleton/${pose}/frame_${frame}.png`,
+                );
+            }
+        });
 
-        // ── BloatedShadow: Golem first idle frame ──
-        this.load.image('enemy_golem_raw', 'assets/images/enemies/shadow/golem/Golem_IdleA.png');
+        // ── BloatedShadow: Golem spritesheets (proper animated frames) ──
+        const golemSheets = [
+            ['idle',     'Golem_IdleB.png',      256, 64],
+            ['run',      'Golem_Run.png',        256, 64],
+            ['attack',   'Golem_AttackA.png',    256, 192],
+            ['attackFx', 'Golem_AttackA_FX.png', 192, 128],
+            ['hit',      'Golem_HitA.png',       256, 128],
+            ['deathA',   'Golem_DeathA.png',     256, 128],
+            ['deathB',   'Golem_DeathB.png',     256, 192],
+            ['deathFx',  'Golem_Death_FX.png',   128, 128],
+        ];
+        golemSheets.forEach(([key, src]) => {
+            this.load.spritesheet(
+                `enemy_golem_${key}`,
+                `assets/images/enemies/shadow/golem/${src}`,
+                { frameWidth: 64, frameHeight: 64 },
+            );
+        });
 
     }
 
@@ -248,14 +279,8 @@
         // Free raw spritesheet memory (extracted frames remain)
         this.textures.remove('player_att_raw');
 
-        // Skeleton sheet has a solid background in the source asset. Convert the
-        // frames we actually use into transparent textures so the enemy renders
-        // as sprite art instead of a colored square.
-        this._generateSkeletonTextures();
-        this.textures.remove('enemy_skeleton');
-
-        // ── BloatedShadow: extract first 64×64 Golem frame ──
-        this._generateGolemTexture();
+        this._generateSkeletonAnimations();
+        this._generateGolemAnimations();
 
         // ── WandererCrystal: programmatic teal hexagon ──
         this._generateCrystalTexture();
@@ -265,6 +290,9 @@
 
         // Vanish textures (player death animation ? dissipating ghost silhouette)
         this._generateVanishTextures();
+
+        // ═══ FX textures (new attack telegraphs for enemy AI overhaul) ═══
+        this._generateFxTextures();
 
         this._decodeEmbeddedAudio()
             .then(() => {
@@ -358,61 +386,133 @@
         bg.destroy();
     }
 
-    /**
-     * Convert selected skeleton sheet frames into transparent textures.
-     * The source PNG uses a flat purple background, so we key that color out
-     * and keep only the actual sprite pixels.
-     */
-    _generateSkeletonTextures() {
-        const src = this.textures.get('enemy_skeleton').getSourceImage();
-        const frameWidth = 48;
-        const frameHeight = 56;
-        const sheetCols = 8;
+    _generateSkeletonAnimations() {
+        const makeFrames = (pose, count) => Array.from({ length: count }, (_, i) => ({
+            key: `enemy_skeleton_${pose}_${String(i + 1).padStart(2, '0')}`,
+        }));
 
-        const makeFrame = (frameIndex, textureKey) => {
-            const sx = (frameIndex % sheetCols) * frameWidth;
-            const sy = Math.floor(frameIndex / sheetCols) * frameHeight;
+        if (!this.anims.exists('enemy_skeleton_idle_anim')) {
+            this.anims.create({
+                key: 'enemy_skeleton_idle_anim',
+                frames: makeFrames('idle', 5),
+                frameRate: 10,
+                repeat: -1,
+            });
+        }
 
-            const canvas = document.createElement('canvas');
-            canvas.width = frameWidth;
-            canvas.height = frameHeight;
+        if (!this.anims.exists('enemy_skeleton_run_anim')) {
+            this.anims.create({
+                key: 'enemy_skeleton_run_anim',
+                frames: makeFrames('run', 5),
+                frameRate: 10,
+                repeat: -1,
+            });
+        }
 
-            const ctx = canvas.getContext('2d');
-            ctx.imageSmoothingEnabled = false;
-            ctx.drawImage(src, sx, sy, frameWidth, frameHeight, 0, 0, frameWidth, frameHeight);
+        if (!this.anims.exists('enemy_skeleton_attack_anim')) {
+            this.anims.create({
+                key: 'enemy_skeleton_attack_anim',
+                frames: makeFrames('attack', 8),
+                frameRate: 10,
+                repeat: 0,
+            });
+        }
 
-            const imageData = ctx.getImageData(0, 0, frameWidth, frameHeight);
-            const data = imageData.data;
-            const bgR = data[0];
-            const bgG = data[1];
-            const bgB = data[2];
+        if (!this.anims.exists('enemy_skeleton_attack_windup_anim')) {
+            this.anims.create({
+                key: 'enemy_skeleton_attack_windup_anim',
+                frames: makeFrames('attack', 4),
+                frameRate: 10,
+                repeat: 0,
+            });
+        }
 
-            for (let i = 0; i < data.length; i += 4) {
-                if (data[i] === bgR && data[i + 1] === bgG && data[i + 2] === bgB) {
-                    data[i + 3] = 0;
-                }
-            }
+        if (!this.anims.exists('enemy_skeleton_attack_strike_anim')) {
+            this.anims.create({
+                key: 'enemy_skeleton_attack_strike_anim',
+                frames: makeFrames('attack', 8).slice(4),
+                frameRate: 10,
+                repeat: 0,
+            });
+        }
 
-            ctx.putImageData(imageData, 0, 0);
-            this.textures.addCanvas(textureKey, canvas);
-        };
-
-        makeFrame(0, 'enemy_skeleton_idle');
-        makeFrame(3, 'enemy_skeleton_windup');
-        makeFrame(6, 'enemy_skeleton_swing');
+        if (!this.anims.exists('enemy_skeleton_death_anim')) {
+            this.anims.create({
+                key: 'enemy_skeleton_death_anim',
+                frames: makeFrames('death', 10),
+                frameRate: 10,
+                repeat: 0,
+            });
+        }
     }
 
-    /** Extract first 64×64 frame from Golem_IdleA (256×64 spritesheet). */
-    _generateGolemTexture() {
-        const src = this.textures.get('enemy_golem_raw').getSourceImage();
-        const canvas = document.createElement('canvas');
-        canvas.width = 64;
-        canvas.height = 64;
-        const ctx = canvas.getContext('2d');
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(src, 0, 0, 64, 64, 0, 0, 64, 64);
-        this.textures.addCanvas('enemy_golem', canvas);
-        this.textures.remove('enemy_golem_raw');
+
+
+    _generateGolemAnimations() {
+        if (!this.anims.exists('golem_idle')) {
+            this.anims.create({
+                key: 'golem_idle',
+                frames: this.anims.generateFrameNumbers('enemy_golem_idle', { start: 0, end: 3 }),
+                frameRate: 5,
+                repeat: -1,
+            });
+        }
+        if (!this.anims.exists('golem_run')) {
+            this.anims.create({
+                key: 'golem_run',
+                frames: this.anims.generateFrameNumbers('enemy_golem_run', { start: 0, end: 3 }),
+                frameRate: 8,
+                repeat: -1,
+            });
+        }
+        if (!this.anims.exists('golem_attack')) {
+            this.anims.create({
+                key: 'golem_attack',
+                frames: this.anims.generateFrameNumbers('enemy_golem_attack', { start: 0, end: 11 }),
+                frameRate: 15,
+                repeat: 0,
+            });
+        }
+        if (!this.anims.exists('golem_attack_fx')) {
+            this.anims.create({
+                key: 'golem_attack_fx',
+                frames: this.anims.generateFrameNumbers('enemy_golem_attackFx', { start: 0, end: 4 }),
+                frameRate: 10,
+                repeat: 0,
+            });
+        }
+        if (!this.anims.exists('golem_hit')) {
+            this.anims.create({
+                key: 'golem_hit',
+                frames: this.anims.generateFrameNumbers('enemy_golem_hit', { start: 0, end: 4 }),
+                frameRate: 10,
+                repeat: 0,
+            });
+        }
+        if (!this.anims.exists('golem_death_a')) {
+            this.anims.create({
+                key: 'golem_death_a',
+                frames: this.anims.generateFrameNumbers('enemy_golem_deathA', { start: 0, end: 4 }),
+                frameRate: 6,
+                repeat: 0,
+            });
+        }
+        if (!this.anims.exists('golem_death_b')) {
+            this.anims.create({
+                key: 'golem_death_b',
+                frames: this.anims.generateFrameNumbers('enemy_golem_deathB', { start: 0, end: 8 }),
+                frameRate: 8,
+                repeat: 0,
+            });
+        }
+        if (!this.anims.exists('golem_death_fx')) {
+            this.anims.create({
+                key: 'golem_death_fx',
+                frames: this.anims.generateFrameNumbers('enemy_golem_deathFx', { start: 0, end: 3 }),
+                frameRate: 6,
+                repeat: 0,
+            });
+        }
     }
 
     /** Generate programmatic WandererCrystal texture (glowing teal hexagon). */
@@ -516,6 +616,73 @@
         g.fillRect(cx + 1, 28, 4, 3);
         g.generateTexture('player_vanish3', S, S);
         g.destroy();
+    }
+
+    /* ================================================================== */
+    /*  FX TEXTURES — enemy attack telegraph VFX (generated programmatic)    */
+    /* ================================================================== */
+
+    /** Generate all attack FX textures for enemies. */
+    _generateFxTextures() {
+        this._generateCircleTexture('fx_pounce_tell', 16, 0x6666ff, 0.6);
+        this._generateArcTexture('fx_sweep_arc', 80, 20, 0x7FE0DE, 0.7);
+        this._generateDiamondTexture('fx_bash_impact', 12, 0xff8844, 1.0);
+        this._generateRingTexture('fx_pulse_ring', 80, 0x2EC4B6, 0.8);
+        this._generateCircleTexture('fx_quick_burst_proj', 4, 0x66ffff, 1.0);
+        this._generateLineTexture('fx_swoop_trail', 60, 6, 0xff88cc, 0.5);
+    }
+
+    /** Generate a filled circle texture. */
+    _generateCircleTexture(key, radius, color, alpha) {
+        const size = radius * 2;
+        const gfx = this.make.graphics({ add: false });
+        gfx.fillStyle(color, alpha);
+        gfx.fillCircle(radius, radius, radius);
+        gfx.generateTexture(key, size, size);
+        gfx.destroy();
+    }
+
+    /** Generate a filled diamond texture. */
+    _generateDiamondTexture(key, size, color, alpha) {
+        const half = size / 2;
+        const gfx = this.make.graphics({ add: false });
+        gfx.fillStyle(color, alpha);
+        gfx.fillTriangle(half, 0, 0, half, size, half);
+        gfx.fillTriangle(half, size, 0, half, size, half);
+        gfx.generateTexture(key, size, size);
+        gfx.destroy();
+    }
+
+    /** Generate a ring (stroked circle) texture. */
+    _generateRingTexture(key, radius, color, alpha) {
+        const size = radius * 2;
+        const gfx = this.make.graphics({ add: false });
+        gfx.lineStyle(2, color, alpha);
+        gfx.strokeCircle(radius, radius, radius - 2);
+        gfx.generateTexture(key, size, size);
+        gfx.destroy();
+    }
+
+    /** Generate a filled line/stripe texture. */
+    _generateLineTexture(key, length, thickness, color, alpha) {
+        const gfx = this.make.graphics({ add: false });
+        gfx.fillStyle(color, alpha);
+        gfx.fillRect(0, 0, length, thickness);
+        gfx.generateTexture(key, length, thickness);
+        gfx.destroy();
+    }
+
+    /** Generate a filled arc/crescent texture. */
+    _generateArcTexture(key, width, height, color, alpha) {
+        const gfx = this.make.graphics({ add: false });
+        gfx.fillStyle(color, alpha);
+        gfx.beginPath();
+        gfx.arc(width/2, height, width/2, Math.PI, 0, false);
+        gfx.lineTo(width, 0);
+        gfx.closePath();
+        gfx.fillPath();
+        gfx.generateTexture(key, width, height);
+        gfx.destroy();
     }
 }
 

@@ -1,24 +1,31 @@
 /**
- * FloatingShard — Hover + Drift enemy with CROSS BARRAGE attack.
+ * FloatingShard — Hover + Drift enemy with CROSS BARRAGE + QUICK BURST attacks.
  *
- * State machine:
+ * HK-style state machine:
  *   HOVER  → bobs at origin Y with sine wave, subtle idle drift
- *          → player within 100px horizontally → DRIFT
+ *          → player within 80px horizontally → DRIFT
  *   DRIFT  → slowly moves toward player X
- *          → player within 120px for >1.5s → HOMING
+ *          → player within 100px for >1.5s → alternate between:
+ *             - HOMING (60%) — cross barrage with homing projectiles
+ *             - QUICK_BURST (40%) — 3 rapid projectiles, no homing, 15° spread
  *          → player beyond 150px → RETURN
- *   HOMING → teal glow + spark particles + pulse scale (0.5s tell)
- *          → fire 4 projectiles in a cross pattern (up/down/left/right)
- *          → after 0.3s launch they curve toward the player
- *          → enter RETURN (2s cooldown)
- *   RETURN → drifts back to origin X
+ *   HOMING → teal glow + spark particles + pulse scale (0.35s tell, tightened)
+ *          → fire 4 projectiles in cross pattern, homing after 0.3s
+ *          → enter RECOVER (0.3s) → RETURN
+ *   QUICK_BURST → brief flash (0.2s tell) → fire 3 rapid projectiles at 130px/s
+ *          → no homing, 15° spread, 10 dmg each
+ *          → enter RECOVER (0.3s) → RETURN
+ *   RECOVER → brief pause after attack, slight backward drift
+ *          → RETURN
+ *   RETURN → drifts back to origin X at 60px/s
  *          → reaches origin → HOVER
  *
- * Projectile: teal circle (radius 5), slow-homing, 10 damage
- *             Can be destroyed by player slash attacks
+ * Projectiles: teal circle (radius 5), 10 damage, slash-destroyable
+ *   - Cross barrage: 4 projectiles, slow-homing (90→110px/s), lifetime 4→2.5s
+ *   - Quick burst: 3 projectiles, 130px/s spread, no homing, lifetime 2s
  *
- * Narrative: A broken piece of memory. It scatters when threatened,
- *            like thoughts you can't hold onto.
+ * POGO: N/A (flying enemy)
+ * LEASH: tightened to 120px, return speed 60px/s
  */
 class FloatingShard extends Enemy {
     constructor(scene, x, y) {
@@ -30,8 +37,8 @@ class FloatingShard extends Enemy {
             bodyWidth: 24,
             bodyHeight: 34,
             noGravity: true,
-            leashDistance: 200,
-            returnSpeed: 40,
+            leashDistance: 120,
+            returnSpeed: 60,
         });
 
         this.sprite.setScale(0.8);
@@ -47,7 +54,6 @@ class FloatingShard extends Enemy {
         this._projectiles = [];
         this._gfxToCleanup = [];
 
-        // Listen for sprite destruction
         this.sprite.on('destroy', () => this._cleanupProjectiles());
     }
 
@@ -68,7 +74,6 @@ class FloatingShard extends Enemy {
     /* ================================================================== */
 
     _updateAI(dt, playerX, playerY) {
-        // Cosmetic Y-bob (visual sprite only — physics body stays for collisions)
         const time = this.scene.time.now / 1000;
         this.sprite.y = this.originY + Math.sin(time * Math.PI * 2 / 1.5) * 6;
 
@@ -79,11 +84,8 @@ class FloatingShard extends Enemy {
         switch (this.state) {
             /* ——————————— HOVER ——————————— */
             case 'hover':
-                // Subtle idle drift
                 this.body.setVelocityX(Math.sin(time) * 10);
-
-                // Detect player
-                if (absDist < 100) {
+                if (absDist < 80) {
                     this.driftTimer = 0;
                     this.state = 'drift';
                 }
@@ -94,9 +96,14 @@ class FloatingShard extends Enemy {
                 this.driftTimer += dtSec;
                 this.body.setVelocityX(Math.sign(dist) * this.driftSpeed);
 
-                // HOMING: player within 120px AND drifting for >1.5s
-                if (absDist < 120 && this.driftTimer > 1.5) {
-                    this._enterHomingState(playerX, playerY);
+                // HOMING or QUICK_BURST: player within 100px AND drifting for >1.5s
+                if (absDist < 100 && this.driftTimer > 1.5) {
+                    // Alternate: 60% cross barrage, 40% quick burst
+                    if (Math.random() < 0.6) {
+                        this._enterHomingState(playerX, playerY);
+                    } else {
+                        this._enterQuickBurstState(playerX, playerY);
+                    }
                     break;
                 }
 
@@ -110,38 +117,68 @@ class FloatingShard extends Enemy {
             /* ——————————— HOMING ——————————— */
             case 'homing':
                 this.stateTimer -= dtSec;
-                this.body.setVelocityX(0); // Stop horizontal movement
+                this.body.setVelocityX(0);
 
-                // ── Tell phase (stateTimer > 0) ──
                 if (this.stateTimer > 0) {
-                    // Visual tells set on entry
-                }
-                // ── Fire phase (stateTimer crosses 0) ──
-                else if (!this._homingFired) {
+                    // Tell phase — handled on enter
+                } else if (!this._homingFired) {
                     this._homingFired = true;
                     this.sprite.clearTint();
                     this.sprite.setScale(0.8 * 1.15);
                     this._fireCrossProjectiles(playerX, playerY);
-                }
-                // ── Wait 0.3s, then projectiles lock onto player ──
-                else if (!this._homingReleased) {
+                } else if (!this._homingReleased) {
                     this._homingLockTimer -= dtSec;
                     if (this._homingLockTimer <= 0) {
                         this._homingReleased = true;
                         this._releaseProjectiles(playerX, playerY);
                     }
-                }
-                // ── Done → RETURN ──
-                else {
+                } else {
+                    // Done → RECOVER then RETURN
                     this.driftTimer = 0;
                     this.sprite.clearTint();
+                    this.state = 'recover';
+                    this._recoverTimer = 0.3;
+                }
+                break;
+
+            /* ——————————— QUICK BURST (new) ——————————— */
+            case 'quick_burst':
+                this.stateTimer -= dtSec;
+                this.body.setVelocityX(0);
+
+                if (this.stateTimer > 0) {
+                    // Tell phase
+                } else if (!this._burstFired) {
+                    this._burstFired = true;
+                    this.sprite.clearTint();
+                    this.sprite.setScale(0.8 * 1.15);
+                    this._fireQuickBurst(playerX, playerY);
+                } else {
+                    // Done → RECOVER then RETURN
+                    this.driftTimer = 0;
+                    this.sprite.clearTint();
+                    this.state = 'recover';
+                    this._recoverTimer = 0.3;
+                }
+                break;
+
+            /* ——————————— RECOVER (new) ——————————— */
+            case 'recover':
+                this._recoverTimer -= dtSec;
+                // Slight backward drift away from player
+                this.body.setVelocityX(Math.sign(-dist) * 20);
+                this.sprite.setAlpha(0.6);
+                this.sprite.setTint(0x5577aa); // recovery: blue tint
+                if (this._recoverTimer <= 0) {
+                    this.sprite.setAlpha(1);
+                    this.sprite.clearTint();
+                    this.driftTimer = 0;
                     this.state = 'return';
                 }
                 break;
 
             /* ——————————— RETURN ——————————— */
             case 'return':
-                // Drift back to origin X
                 const dx = this.originX - this.x;
                 this.body.setVelocityX(Math.sign(dx) * this.driftSpeed);
                 if (Math.abs(dx) < 10) {
@@ -150,7 +187,7 @@ class FloatingShard extends Enemy {
                     this.state = 'hover';
                 }
                 // Re-detect player during return
-                if (absDist < 100) {
+                if (absDist < 80) {
                     this.driftTimer = 0;
                     this.state = 'drift';
                 }
@@ -166,7 +203,6 @@ class FloatingShard extends Enemy {
         if (this.state === 'homing' && !this._homingFired) {
             this.scene.tweens.killTweensOf(this.sprite);
         }
-        // Release projectiles immediately on leash return (no wait)
         if (this.state === 'homing' && this._homingFired && !this._homingReleased) {
             this._homingReleased = true;
             if (this.scene.player && !this.scene.player.dead) {
@@ -175,6 +211,7 @@ class FloatingShard extends Enemy {
         }
         this.sprite.clearTint();
         this.sprite.setScale(0.8);
+        this.sprite.setAlpha(0.8);
     }
 
     _onReachedHome() {
@@ -183,8 +220,11 @@ class FloatingShard extends Enemy {
         this._homingFired = false;
         this._homingReleased = false;
         this._homingLockTimer = 0;
+        this._burstFired = false;
+        this._recoverTimer = 0;
         this.sprite.clearTint();
         this.sprite.setScale(0.8);
+        this.sprite.setAlpha(1);
         this.body.setVelocity(0, 0);
     }
 
@@ -194,18 +234,17 @@ class FloatingShard extends Enemy {
 
     _enterHomingState(playerX, playerY) {
         this.state = 'homing';
-        this.stateTimer = 0.5;       // 0.5s tell
+        this.stateTimer = 0.35;       // 0.35s tell (tightened from 0.5s)
         this._homingFired = false;
         this._homingReleased = false;
-        this._homingLockTimer = 0.3; // 0.3s before projectiles lock
+        this._homingLockTimer = 0.3;
 
-        // Stop horizontal movement
         this.body.setVelocityX(0);
 
-        // ── Visual tell: teal glow ──
+        // Visual tell: teal glow
         this.sprite.setTint(0x66ffff);
 
-        // ── Visual tell: upward spark particles ──
+        // Upward spark particles
         for (let i = 0; i < 3; i++) {
             const spark = this.scene.add.circle(
                 this.x + Phaser.Math.Between(-8, 8),
@@ -218,7 +257,7 @@ class FloatingShard extends Enemy {
                 y: spark.y - Phaser.Math.Between(15, 25),
                 alpha: 0,
                 scale: 0.2,
-                duration: 500,
+                duration: 350,
                 ease: 'Power2',
                 onComplete: () => {
                     if (spark && spark.active) spark.destroy();
@@ -228,27 +267,21 @@ class FloatingShard extends Enemy {
             });
         }
 
-        // ── Visual tell: pulsing scale 1.0→1.15→1.0 over 0.5s ──
+        // Pulsing scale tween
         this.scene.tweens.add({
             targets: this.sprite,
             scaleX: 0.8 * 1.15,
             scaleY: 0.8 * 1.15,
-            duration: 250,
+            duration: 175,
             yoyo: true,
             ease: 'Sine.easeInOut',
         });
 
-        // Audio — charge-up
         this.scene.sound.play('sfx_enemy_attack', { volume: 0.4, detune: 100 });
     }
 
-    /**
-     * Fire 4 projectiles in a cross pattern around the enemy.
-     * Each projectile drifts outward slowly, then locks onto the player
-     * after 0.3s via _releaseProjectiles.
-     */
     _fireCrossProjectiles(targetX, targetY) {
-        const angles = [0, Math.PI / 2, Math.PI, -Math.PI / 2]; // right, down, left, up
+        const angles = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
         const spreadSpeed = 40;
 
         for (const angle of angles) {
@@ -259,11 +292,10 @@ class FloatingShard extends Enemy {
             p.body.setCircle(5);
             p._damage = 1;
             p._age = 0;
-            p._maxLifetime = 4;
+            p._maxLifetime = 2.5; // tightened from 4
             p._isHoming = false;
             p._canBeSlashDestroyed = true;
 
-            // Initial outward drift
             p.body.setVelocity(
                 Math.cos(angle) * spreadSpeed,
                 Math.sin(angle) * spreadSpeed,
@@ -275,22 +307,97 @@ class FloatingShard extends Enemy {
         this.scene.sound.play('sfx_enemy_attack', { volume: 0.5, detune: -100 });
     }
 
-    /**
-     * After the lock timer expires, all active projectiles
-     * lock toward the player and begin homing.
-     */
     _releaseProjectiles(targetX, targetY) {
         for (const p of this._projectiles) {
             if (!p || !p.active) continue;
             p._isHoming = true;
             const angle = Math.atan2(targetY - p.y, targetX - p.x);
             p.body.setVelocity(
-                Math.cos(angle) * 90,
-                Math.sin(angle) * 90,
+                Math.cos(angle) * 110, // increased from 90
+                Math.sin(angle) * 110,
             );
         }
 
         this.scene.sound.play('sfx_enemy_attack', { volume: 0.5, detune: 50 });
+    }
+
+    /* ================================================================== */
+    /*  QUICK BURST ATTACK (new) — 3 rapid projectiles, no homing            */
+    /* ================================================================== */
+
+    _enterQuickBurstState(playerX, playerY) {
+        this.state = 'quick_burst';
+        this.stateTimer = 0.2;       // 0.2s telegraph
+        this._burstFired = false;
+
+        this.body.setVelocityX(0);
+
+        // Brief flash telegraph
+        this.sprite.setTint(0x88ffff);
+        this.scene.tweens.add({
+            targets: this.sprite,
+            scaleX: 0.8 * 1.25,
+            scaleY: 0.8 * 1.25,
+            duration: 100,
+            yoyo: true,
+            ease: 'Sine.easeInOut',
+        });
+
+        // ── Cyan flash burst particles (radial) ──
+        for (let i = 0; i < 5; i++) {
+            const angle = (i / 5) * Math.PI * 2;
+            const spark = this.scene.add.circle(
+                this.x, this.y,
+                Phaser.Math.Between(2, 4), 0x66ffff, 0.8,
+            ).setDepth(10);
+            this._gfxToCleanup.push(spark);
+            this.scene.tweens.add({
+                targets: spark,
+                x: spark.x + Math.cos(angle) * Phaser.Math.Between(15, 25),
+                y: spark.y + Math.sin(angle) * Phaser.Math.Between(15, 25),
+                alpha: 0,
+                scale: 0.2,
+                duration: 200,
+                ease: 'Power2',
+                onComplete: () => {
+                    if (spark && spark.active) spark.destroy();
+                    const idx = this._gfxToCleanup.indexOf(spark);
+                    if (idx !== -1) this._gfxToCleanup.splice(idx, 1);
+                },
+            });
+        }
+
+        this.scene.sound.play('sfx_enemy_attack', { volume: 0.35, detune: 200 });
+    }
+
+    _fireQuickBurst(targetX, targetY) {
+        // Fire 3 projectiles in a 15° spread toward player
+        const baseAngle = Math.atan2(targetY - this.y, targetX - this.x);
+        const spread = 0.26; // ~15° in radians
+
+        for (let i = -1; i <= 1; i++) {
+            const angle = baseAngle + spread * i;
+            const p = this.scene.add.circle(this.x, this.y, 4, 0x66ffff, 1)
+                .setDepth(10);
+            this.scene.physics.add.existing(p);
+            p.body.setAllowGravity(false);
+            p.body.setCircle(4);
+            p._damage = 1;
+            p._age = 0;
+            p._maxLifetime = 2.0;
+            p._isHoming = false;   // no homing
+            p._canBeSlashDestroyed = true;
+
+            // Fast linear velocity
+            p.body.setVelocity(
+                Math.cos(angle) * 130,
+                Math.sin(angle) * 130,
+            );
+
+            this._projectiles.push(p);
+        }
+
+        this.scene.sound.play('sfx_enemy_attack', { volume: 0.5, detune: -50 });
     }
 
     /* ================================================================== */
@@ -307,7 +414,7 @@ class FloatingShard extends Enemy {
                 continue;
             }
 
-            // ── Destroy if outside room bounds ──
+            // Destroy if outside room bounds
             const b = this.scene.physics.world.bounds;
             if (p.x < b.x - 20 || p.x > b.right + 20 || p.y < b.y - 20 || p.y > b.bottom + 20) {
                 this._destroyProjectile(p, i);
@@ -316,28 +423,28 @@ class FloatingShard extends Enemy {
 
             p._age += dtSec;
 
-            // ── Homing: only if _isHoming is true (after release phase) ──
+            // Homing: only if _isHoming is true
             if (p._isHoming) {
                 if (this.scene.player && !this.scene.player.dead) {
                     const angle = Math.atan2(playerY - p.y, playerX - p.x);
                     p.body.setVelocity(
-                        Math.cos(angle) * 90,
-                        Math.sin(angle) * 90,
+                        Math.cos(angle) * 110,
+                        Math.sin(angle) * 110,
                     );
                 }
             }
 
-            // ── Slash destruction (check player attack hitbox overlap) ──
+            // Slash destruction
             if (p._canBeSlashDestroyed && this.scene.player && !this.scene.player.dead) {
                 this._checkSlashCollision(p, i);
             }
 
-            // ── Lifetime check ──
+            // Lifetime check
             if (p._age >= p._maxLifetime) {
                 this.scene.tweens.add({
                     targets: p,
                     alpha: 0,
-                    duration: 300,
+                    duration: 200,
                     ease: 'Sine.easeIn',
                     onComplete: () => { if (p && p.active) p.destroy(); },
                 });
@@ -345,7 +452,7 @@ class FloatingShard extends Enemy {
                 continue;
             }
 
-            // ── Player collision ──
+            // Player collision
             if (this.scene.player && !this.scene.player.dead) {
                 const dx = playerX - p.x;
                 const dy = playerY - p.y;
@@ -357,16 +464,12 @@ class FloatingShard extends Enemy {
         }
     }
 
-    /**
-     * Check if the player's slash hitbox overlaps this projectile.
-     */
     _checkSlashCollision(p, index) {
         const player = this.scene.player;
         if (!player.slashHitbox || !player.slashHitbox.active) return;
 
         const sb = player.slashHitbox.getBounds();
         if (Phaser.Geom.Intersects.RectangleToRectangle(sb, p.getBounds())) {
-            // Destroy projectile with a small particle burst
             for (let j = 0; j < 4; j++) {
                 const spark = this.scene.add.circle(
                     p.x, p.y, 2, 0x66ffff, 0.8,
