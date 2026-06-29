@@ -446,7 +446,7 @@ class MenuScene extends Phaser.Scene {
         const w = this.scale.width;
         const h = this.scale.height;
         const panelW = 408;
-        const panelH = 392;
+        const panelH = 436;
         const px = (w - panelW) / 2;
         const py = (h - panelH) / 2 - 2;
         const cx = w / 2;
@@ -498,14 +498,15 @@ class MenuScene extends Phaser.Scene {
         const sliderX = px + 148;
         const sliderW = 132;
         const sliderH = 6;
-        const rowY = [py + 90, py + 142, py + 194, py + 248, py + 292, py + 336];
+        const rowY = [py + 90, py + 142, py + 194, py + 248, py + 292, py + 336, py + 380];
         const rowDefs = [
             { key: 'master', labelKey: 'master', type: 'slider', y: rowY[0], valueText: true },
             { key: 'bgm', labelKey: 'bgm', type: 'slider', y: rowY[1], valueText: true },
             { key: 'sfx', labelKey: 'sfx', type: 'slider', y: rowY[2], valueText: true },
             { key: 'fullscreen', labelKey: 'fullscreen', type: 'toggle', y: rowY[3], valueText: true },
             { key: 'language', labelKey: 'language', type: 'toggle', y: rowY[4], valueText: true },
-            { key: 'back', labelKey: 'back', type: 'back', y: rowY[5], valueText: false },
+            { key: 'controls', labelKey: 'controls', type: 'toggle', y: rowY[5], valueText: true },
+            { key: 'back', labelKey: 'back', type: 'back', y: rowY[6], valueText: false },
         ];
 
         this.settingsItems = [];
@@ -700,6 +701,10 @@ class MenuScene extends Phaser.Scene {
                     Lang.toggle();
                     this._refreshLocalizedText();
                     this.sound.play('sfx_ui_confirm', { volume: 0.35 });
+                } else if (selected.key === 'controls') {
+                    ControlMode.toggle();
+                    this._updateSettingsVisuals();
+                    this.sound.play('sfx_ui_confirm', { volume: 0.35 });
                 }
                 break;
             case 'back':
@@ -813,6 +818,10 @@ class MenuScene extends Phaser.Scene {
                 } else if (item.key === 'language') {
                     item.valueText.setText(`[${langCode.toUpperCase()}]`);
                     item.valueText.setColor(langCode === 'cn' ? '#7FE0DE' : '#a8d8ff');
+                } else if (item.key === 'controls') {
+                    const mode = ControlMode.get();
+                    item.valueText.setText(`${mode === 'mobile' ? Lang.t('mobile') : Lang.t('pc')}`);
+                    item.valueText.setColor(mode === 'mobile' ? '#7FE0DE' : '#a8d8ff');
                 }
             }
         });

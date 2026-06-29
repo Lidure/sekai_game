@@ -602,6 +602,11 @@ class PauseMenu {
         if (this.scene.physics && this.scene.physics.world) {
             this.scene.physics.resume();
         }
+
+        // Reset mobile controls just-pressed to prevent phantom inputs
+        if (this.scene.mobileControls) {
+            this.scene.mobileControls.resetJustPressed();
+        }
     }
 
     /* ================================================================== */

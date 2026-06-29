@@ -57,7 +57,8 @@ sekai_game/
 │   └── ui/
 │       ├── PauseMenu.js      # 暂停菜单（Resume/Status/Save/MainMenu/Fullscreen/Language/主音量滑块）
 │       ├── MapView.js        # 地图系统（M 键打开，HK风格房间图、平台简图、方向箭头、图例、POI标记）
-│       └── CharacterPanel.js # 角色信息面板（Tab/暂停菜单打开，HP/Feelings/能力/地图进度/战斗统计）
+│       ├── CharacterPanel.js # 角色信息面板（Tab/暂停菜单打开，HP/Feelings/能力/地图进度/战斗统计）
+│       └── MobileControls.js # 移动端触屏虚拟按键（左/右/跳跃/攻击/冲刺，设置菜单 PC/Mobile 切换）
 │
 ├── scripts/                  # 开发工具脚本
 │   └── generate-tilemaps.js  # 从 RoomDef 数据生成 Tiled .tmj 地图文件
@@ -270,7 +271,7 @@ BootScene → MenuScene → GameScene ←→ BossScene (叠加层)
 3. ✅ 地面图块多样化（7 区域不同风格）
 4. ✅ 环境装饰元素（钟乳石/水晶/火炬/垂藤/符文光点/区域标识）
 
-**Sprint 2（当前）- 房间式架构：**
+**Sprint 2 - 房间式架构（已完成）：**
 1. ✅ 设计文档（ADR-0001）+ RoomDef.js 数据定义
 2. ✅ GameScene.js 重构：8 房间，过渡系统，按房间创建/销毁
 3. ✅ 存档系统适配：房间坐标/abilities 对象/all-room benches 持久化
@@ -280,52 +281,54 @@ BootScene → MenuScene → GameScene ←→ BossScene (叠加层)
 **Sprint 3 - 游戏反馈打磨（已完成）：**
 角色动画完善、击中特效升级、屏幕特效、摄像机润色
 
-**Sprint 4 - 音频系统完整集成：**
+**Sprint 4 - 音频系统完整集成（已完成）：**
 缺失 SFX 接入、BGM 动态切换、音频 Ducking、菜单音效完善
 
-**Sprint 5 - 内容扩展：**
+**Sprint 5 - 内容扩展（已完成）：**
 新敌人类型、Feelings 特殊攻击、绝望模式增强、世界状态持久化
 
-**Sprint 6 - UI/UX 打磨：**
+**Sprint 6 - UI/UX 打磨（已完成）：**
 主菜单粒子增强、HUD 动画、暂停菜单设置页、地图系统美化
 
-**Sprint 7（已结束）- Tilemap 迁移（Phase 1 - Generator + GameScene）：**
+**Sprint 7 - Tilemap 迁移 Phase 1（已完成）：**
 1. ✅ 写 `scripts/generate-tilemaps.js` 从旧 RoomDef 数据生成 8 个 `.tmj` 文件
-2. ✅ `BootScene.js` 添加 8 行 `this.load.tilemapTiledJSON()`
-3. ✅ `RoomDef.js` 精简为纯元数据（~95 行，删掉所有坐标数组 + 装饰 + spawn 数据）
-4. ✅ `GameScene.js` `_buildRoom` 重写为 tilemap 加载：`this.make.tilemap()` → createLayer → setCollisionByProperty → `_parseObjectLayers()` 读取 Exits/SpawnPoints/Gates/Doors/Decorations 对象层
-5. ✅ 移除 `_buildGround`/`_buildPlatforms`（被 tilemap Ground/Platforms 层代替）
-6. ✅ 旧 `_buildEnemies`/`_buildBenches`/`_buildNPCs`/`_buildCollectibles`/`_buildAbilityItems`/`_buildAbilityGates`/`_buildOneWayDoors`/`_buildBossTrigger`/`_buildDecorations` 全部移除 → 改为 `_build*FromSpawns` 从 `this._spawn*` 产物读取
-7. ✅ `_checkExits` → 改用 `this._roomExits`（tilemap Exits 对象层）
-8. ✅ `_setupRoomBoundary` / `_buildBackground` → 用 `this._roomPixelWidth/Height`
-9. ✅ `MapView.js` → 用 `RoomDef.CONNECTIONS` 替代 `room.def.exits`；POI 简化；player marker 用常量宽高
-10. ✅ `_clearRoom` 清理新增数组（`_oneWayDoorZones`/`_oneWayDoorGraphics`）
-11. ✅ **player scale 0.63→0.85** + collision body 14×20→18×26 + hitbox 等比放大
-12. ✅ **camera profiles**：default zoom 2.6×, shaft 1.6×, boss 1.3×（含 deadzone 重算）
-13. ✅ **敌人缩放**：SF 1.0→1.35 / Shard 0.8→1.1 / Bat 0.1→0.14 / Skeleton 1.0→1.35 / Boss 0.18→0.24
-14. ✅ **地面图块 64×64→16×16px 重制**：flat noise 纹理（去 3D 立体感），7 区域
-15. ✅ **Tilemap 格子 32×32→16×16**：TMJ 再生（80×46 正常 / 60×61 shaft），地面碰撞 y=680（行 43，-8 offset），平台 y=T×16+8（-16 offset）
-16. ✅ **平台薄视觉**：2px 青主线 + 1px 阴影 / 16×16 tile（tile layer alpha 0.15）
-17. ✅ **enemyGroup 碰撞修复**：添加与 `_tileGround` 的碰撞（之前只撞平台）
-18. ✅ **spawn 坐标校准 +24px**：exit.y 624 / exit.targetY 660 / NPC y 660
-19. ✅ **全部 JS 文件 node --check 通过**，8 TMJ 文件有效 JSON
+2. ✅ `BootScene.js` 加载 tilemap JSON
+3. ✅ `RoomDef.js` 精简为纯元数据
+4. ✅ `GameScene.js` `_buildRoom` 重写为 tilemap 加载
+5. ✅ 移除所有 `_build*` 方法，改为 `_build*FromSpawns`
+6. ✅ `_checkExits` → 使用 `this._roomExits`
+7. ✅ MapView 适配
+8. ✅ `_clearRoom` 清理新数组
+9. ✅ player scale 0.63→0.85
+10. ✅ camera profiles
+11. ✅ tile 16×16
+12. ✅ 平台薄视觉
+13. ✅ spawn 坐标校准
 
 **Sprint 8 - 平台布局重新设计 + 可破坏墙系统（已完成）：**
-1. ✅ **8 房间全平台重新设计**
-2. ✅ **lower 单向门替换为可破坏墙**
-3. ✅ **所有 TMJ 再生验证**
-4. ✅ **全部 JS 文件通过 `node --check`**
-5. ✅ **三个已知 BUG 修复**：mid→shaft出口可达、能力门阻挡主线、secret 房间可进入（新增 void 房间）
+1. ✅ 8 房间全平台重新设计
+2. ✅ lower 单向门替换为可破坏墙
+3. ✅ 所有 TMJ 再生验证
+4. ✅ 三个已知 BUG 修复
 
-**Sprint 9（当前）- 敌人 AI HK 化大改 + 新房间 + UI 重设计：**
-1. ✅ **敌人 AI HK 化大改**：所有 6 种敌人 leash 收紧至 120-160px，2+ 攻击模式（Pounce/Rush、Cross Barrage/Quick Burst、Swoop/Dive、Shield Bash/Melee、Slam/Sweep、Laser/Pulse Burst），pogo 支持、telegraph 规范、retreat/recover 行为
-2. ✅ **视觉适配**：6 个新程序化 VFX 纹理 + 每种新攻击的粒子效果 + 标准化状态色调
-3. ✅ **怪物布局重新平衡**：所有 8 房间敌人重排，符合 HK 风格放置原则（2-4/房间，混合空地，围绕地形放）
-4. ✅ **新房间"THE VOID"**：secret→void→lower 捷径，7 个盘旋平台，1 WandererCrystal + 1 ShadowFragment
-5. ✅ **地图 UI 重设计**：HK 风格房间微型轮廓、方向箭头、POI 系统（6 种类型）、图例、玩家标记增强（脉冲发光+面向指示）、打开/关闭动画
-6. ✅ **角色信息面板**：Tab/暂停状态打开，显示 VESSEL/FEELINGS/ABILITIES/MAP/COMBAT 信息
-7. ❌ 全流程游戏内验证（房间过渡 → 可破坏墙 → 能力门 → Boss → 存档/读档）
-8. ❌ Boss attack 纹理修复（`melee_active` → `boss_melee1`）：等待用户提供素材
+**Sprint 9 - 敌人 AI + 新房间 + UI 重设计（已完成）：**
+1. ✅ 所有 6 种敌人 AI HK 化大改
+2. ✅ 6 个 VFX 纹理 + 粒子效果
+3. ✅ 怪物布局重新平衡
+4. ✅ 新房间"THE VOID"
+5. ✅ 地图 UI HK 风格重设计
+6. ✅ 角色信息面板
+7. ❌ 全流程游戏内验证
+8. ❌ Boss attack 纹理修复
+
+**Sprint 10（当前）- 移动端操作支持：**
+1. ✅ `MobileControls.js`：虚拟按键（圆型按钮，半透明深色底+青色边框），支持左/右/跳跃/攻击/冲刺
+2. ✅ `ControlMode`：localStorage 持久化 PC/Mobile 切换
+3. ✅ `MenuScene` 设置页增加 Controls 切换选项
+4. ✅ `GameScene` 集成：创建 MobileControls + 暂停时重置防幻触
+5. ✅ `Player` 集成：移动端按钮输入与键盘输入一起处理
+6. ✅ NPC 对话支持移动端攻击按钮操作
+7. ❌ 真机/浏览器测试
 
 ### 🔴 已知 BUG（待修复）
 - **Boss 攻击纹理**：`melee_active` 状态使用 `boss_attack` 纹理而非 `boss_melee1`（需用户提供素材）
@@ -350,7 +353,7 @@ BootScene → MenuScene → GameScene ←→ BossScene (叠加层)
 
 ---
 
-**最后更新时间**：2026-06-29（Sprint 9 完成：6 种敌人 AI HK 化、新房间 THE VOID、地图 UI 重设计、角色信息面板）
+**最后更新时间**：2026-06-29（Sprint 10 进行中：移动端虚拟按键 + PC/Mobile 切换 + 全流程测试）
 **维护者**：lidure
 
 ## Relevant Files

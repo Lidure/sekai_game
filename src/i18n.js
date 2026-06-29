@@ -1,4 +1,4 @@
-const LANG_STORAGE_KEY = 'sekai_lang';
+﻿const LANG_STORAGE_KEY = 'sekai_lang';
 
 const Lang = {
     _code: 'cn',
@@ -45,6 +45,9 @@ const Lang = {
         roomShaft: 'VERTICAL SHAFT',
         roomPreboss: 'PRE-BOSS',
         roomBoss: 'BOSS AREA',
+        controls: 'CONTROLS',
+        pc: 'PC',
+        mobile: 'MOBILE',
         on: 'ON',
         off: 'OFF',
         npcAscent_0: 'The echoes in this place... they sound like her voice.',
@@ -99,6 +102,9 @@ const Lang = {
         roomShaft: '\u5782\u76F4\u4E95',
         roomPreboss: 'BOSS \u524D\u591C',
         roomBoss: 'BOSS \u533A\u57DF',
+        controls: '操作',
+        pc: 'PC',
+        mobile: '移动端',
         on: '\u5F00',
         off: '\u5173',
         npcAscent_0: '\u8FD9\u4E2A\u7A7A\u95F4\u7684\u56DE\u97F3...\u50CF\u662F\u5979\u7684\u58F0\u97F3\u3002',

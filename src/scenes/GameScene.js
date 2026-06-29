@@ -42,6 +42,10 @@ class GameScene extends Phaser.Scene {
         // Room system init
         this._initRoomSystem();
 
+        // Mobile controls
+        this.mobileControls = new MobileControls(this);
+        if (ControlMode.isMobile()) this.mobileControls.show();
+
         // Player + input (once, scene-level)
         this._createPlayer();
         this._createInput();
@@ -88,6 +92,7 @@ class GameScene extends Phaser.Scene {
             if (this.characterPanel) { this.characterPanel.destroy(); this.characterPanel = null; }
             if (this.mapView) { this.mapView.destroy(); this.mapView = null; }
             if (this.pauseMenu) { this.pauseMenu.destroy(); this.pauseMenu = null; }
+            if (this.mobileControls) { this.mobileControls.destroy(); this.mobileControls = null; }
         });
     }
 
@@ -2124,6 +2129,9 @@ class GameScene extends Phaser.Scene {
             return;
         }
 
+        // ---- Mobile controls just-pressed refresh ----
+        if (this.mobileControls) this.mobileControls.refreshJustDown();
+
         // ---- Exit detection ----
         this._checkExits();
 
@@ -2141,7 +2149,8 @@ class GameScene extends Phaser.Scene {
         // ---- NPC dialogue (freezes gameplay while talking) ----
         if (this.isTalking && this.talkingNPC) {
             const talkingNPC = this.talkingNPC;
-            if (Phaser.Input.Keyboard.JustDown(this.keys.attack)) {
+            const mcAdvance = this.mobileControls && this.mobileControls.attackJustDown;
+            if (Phaser.Input.Keyboard.JustDown(this.keys.attack) || mcAdvance) {
                 const closed = talkingNPC.advanceDialogue();
                 if (closed) {
                     this.isTalking = false;
@@ -2160,9 +2169,10 @@ class GameScene extends Phaser.Scene {
         // ---- NPC proximity & interaction ----
         if (!this.player.dead) {
             const nearbyNPC = this._getNearbyNPC();
+            const mcInteract = this.mobileControls && this.mobileControls.attackJustDown;
             if (nearbyNPC) {
                 nearbyNPC.showPrompt(true);
-                if (Phaser.Input.Keyboard.JustDown(this.keys.attack)) {
+                if (Phaser.Input.Keyboard.JustDown(this.keys.attack) || mcInteract) {
                     this.talkingNPC = nearbyNPC;
                     this.isTalking = true;
                     nearbyNPC.showPrompt(false);

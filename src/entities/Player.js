@@ -273,12 +273,13 @@ class Player {
 
         const dt = delta / 1000;
         const keys = this.scene.keys;
-        const left = keys.left.isDown;
-        const right = keys.right.isDown;
+        const mc = this.scene.mobileControls;
+        const left = keys.left.isDown || (mc && mc.left);
+        const right = keys.right.isDown || (mc && mc.right);
         const jumpKey = keys.jump || keys.jump1 || keys.jump2;
         const dashKey = keys.dash || keys.dash1 || keys.dash2;
-        const jump = jumpKey ? Phaser.Input.Keyboard.JustDown(jumpKey) : false;
-        const attack = this.bufferAttack > 0;
+        const jump = (jumpKey ? Phaser.Input.Keyboard.JustDown(jumpKey) : false) || (mc && mc.jumpJustDown);
+        const attack = this.bufferAttack > 0 || (mc && mc.attackJustDown);
 
         if (this.bufferAttack > 0) this.bufferAttack--;
         if (this.invulnTimer > 0) this.invulnTimer--;
@@ -305,7 +306,7 @@ class Player {
 
 
         // Dash activation — only from move/air states
-        const dashPressed = dashKey ? Phaser.Input.Keyboard.JustDown(dashKey) : false;
+        const dashPressed = (dashKey ? Phaser.Input.Keyboard.JustDown(dashKey) : false) || (mc && mc.dashJustDown);
         if (dashPressed && this.canDash &&
             (this.state === 'idle' || this.state === 'run' || this.state === 'jump' || this.state === 'fall')) {
             this._enterState('dashing');
@@ -622,7 +623,8 @@ class Player {
 
     _applyJumpGravity(dt, keys) {
         const jumpKey = keys.jump || keys.jump1 || keys.jump2;
-        const jumpHeld = jumpKey ? jumpKey.isDown : false;
+        const mc = this.scene.mobileControls;
+        const jumpHeld = (jumpKey ? jumpKey.isDown : false) || (mc && mc.jump);
         const body = this.body;
         const baseGravity = this.scene.physics.world.gravity.y;
         let gravityMult = 1;
