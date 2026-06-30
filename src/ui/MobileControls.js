@@ -22,6 +22,9 @@ class MobileControls {
         this.active = false;
         this._objs = [];
 
+        // Enable multi-touch so joystick and action buttons work simultaneously
+        scene.input.addPointer(2);
+
         // ── Joystick ──
         this.joystickActive = false;
         this.joystickPtrId = -1;
@@ -256,7 +259,7 @@ class MobileControls {
     }
 
     /* ================================================================ */
-    /*  Utility buttons (map + pause)                                      */
+    /*  Utility buttons (back + pause)                                     */
     /* ================================================================ */
 
     _utilityBtn(x, y, r, icon, label) {
@@ -314,15 +317,50 @@ class MobileControls {
     _buildUtilityButtons() {
         const w = this.scene.scale.width;
 
-        // ── Map button (top-left) ──
-        const btnMap = this._utilityBtn(55, 52, 22, '\u25C8', 'MAP');
-        btnMap.zone.on('pointerdown', () => {
+        // ── Back button (top-left) ──
+        const btnBack = this._utilityBtn(55, 110, 22, '\u27F2', 'BACK');
+        btnBack.zone.on('pointerdown', () => {
             if (!this.active) return;
-            const hud = this.scene;
-            const gameScene = this.scene.scene.get('GameScene');
-            if (gameScene && gameScene.pauseMenu && gameScene.pauseMenu.isPaused) return;
-            if (hud && hud.mapView) hud.mapView.toggle();
+            this._triggerBack();
         });
+
+        // ── Two-finger back gesture ──
+        // Track touchable zone centers for hit-testing: joystick ring, all buttons
+        this._touchZones = [
+            { x: this._jcx, y: this._jcy, r: this._jr + 30 },     // joystick
+            { x: this.scene.scale.width - 80, y: this.scene.scale.height - 180, r: 64 },  // jump
+            { x: this.scene.scale.width - 170, y: this.scene.scale.height - 90, r: 56 },  // attack
+            { x: this.scene.scale.width - 80, y: this.scene.scale.height - 70, r: 48 },   // dash
+            { x: 55, y: 110, r: 42 },   // back
+            { x: this.scene.scale.width - 55, y: 52, r: 42 },      // pause
+        ];
+
+        this._onPointerDownGesture = (pointer) => {
+            if (!this.active) return;
+            // Count currently held pointers
+            let held = 0;
+            this.scene.input.manager.pointers.forEach(p => { if (p.isDown) held++; });
+            if (held < 2) return;
+
+            // Check if every held pointer is outside all touch zones
+            let allPassive = true;
+            this.scene.input.manager.pointers.forEach(p => {
+                if (!p.isDown) return;
+                let onZone = false;
+                for (const z of this._touchZones) {
+                    const dx = p.x - z.x, dy = p.y - z.y;
+                    if (dx * dx + dy * dy <= z.r * z.r) { onZone = true; break; }
+                }
+                if (onZone) allPassive = false;
+            });
+            if (!allPassive) return;
+
+            this._triggerBack();
+        };
+        this.scene.input.on('pointerdown', this._onPointerDownGesture);
+        this._objs.push({ destroy: () => {
+            this.scene.input.off('pointerdown', this._onPointerDownGesture);
+        }});
 
         // ── Pause button (top-right) ──
         const btnPause = this._utilityBtn(w - 55, 52, 22, '\u23F8', 'PAUSE');
@@ -331,6 +369,53 @@ class MobileControls {
             const gameScene = this.scene.scene.get('GameScene');
             if (gameScene && gameScene.pauseMenu) gameScene.pauseMenu.toggle();
         });
+    }
+
+    _triggerBack() {
+        // Universal back: dismiss whatever is currently open, highest priority first
+        const gameScene = this.scene.scene.get('GameScene');
+        const hud = this.scene;
+        if (!gameScene) return;
+
+        // 1. Save picker open → cancel
+        const pm = gameScene.pauseMenu;
+        if (pm && pm.savePicker && !pm.savePicker.destroyed) {
+            pm.savePicker._cancel();
+            return;
+        }
+
+        // 2. Confirm mode in pause → close
+        if (pm && pm.confirmMode) {
+            pm._closeConfirm();
+            return;
+        }
+
+        // 3. Map open → close first, so pause state can remain intact
+        if (hud && hud.mapView && hud.mapView.isOpen) {
+            hud.mapView._close();
+            return;
+        }
+
+        // 4. Pause menu open → close
+        if (pm && pm.isOpen) {
+            pm._close();
+            return;
+        }
+
+        // 5. Character panel open → close
+        if (hud && hud.characterPanel && hud.characterPanel.isOpen) {
+            hud.characterPanel._close();
+            return;
+        }
+
+        // 6. NPC dialogue open → close
+        if (gameScene.isTalking && gameScene.talkingNPC) {
+            gameScene.talkingNPC._closeDialogue();
+            gameScene.isTalking = false;
+            gameScene.talkingNPC = null;
+            if (gameScene.player) gameScene.player.resetToIdle();
+            return;
+        }
     }
 
     /* ================================================================ */

@@ -12,6 +12,7 @@ class DemoCompleteScene extends Phaser.Scene {
         this._createBackground();
         this._createCard();
         this._createText();
+        this._createStatsPanel();
         this._createHint();
         this._createInput();
 
@@ -96,7 +97,7 @@ class DemoCompleteScene extends Phaser.Scene {
         const top = this.cardY + 36;
 
         this.title = this.add.text(cx, top, 'DEMO COMPLETE', {
-            fontSize: '30px',
+            fontSize: '32px',
             fontFamily: 'monospace',
             color: '#ffffff',
             stroke: '#000000',
@@ -112,25 +113,79 @@ class DemoCompleteScene extends Phaser.Scene {
         const left = this.cardX + 34;
         const startY = this.cardY + 112;
         const bodyStyle = {
-            fontSize: '16px',
+            fontSize: '15px',
             fontFamily: 'monospace',
             color: '#c8d8ff',
-            wordWrap: { width: this.cardW - 68 },
+            wordWrap: { width: this.cardW - 292 },
             lineSpacing: 6,
         };
 
         this.body1 = this.add.text(left, startY,
-            'You reached the current endpoint of the playable demo. The core loop, the boss fight, and the room flow are in place, but the project is still under active development.',
+            'You reached the current endpoint of the playable demo. The core loop, the room flow, and the boss encounter are in place, but the project is still under active development.',
             bodyStyle).setDepth(25);
-        this.body2 = this.add.text(left, startY + 78,
-            'Missing or incomplete areas include character assets, enemy variety, map content, animation polish, and broader world expansion.',
+        this.body2 = this.add.text(left, startY + 82,
+            'Missing or incomplete areas include more character assets, more enemy variety, more map content, and broader world expansion.',
             bodyStyle).setDepth(25);
-        this.body3 = this.add.text(left, startY + 156,
-            'Thanks for playing this build. The full version will continue to grow as more assets and stages are added.',
+        this.body3 = this.add.text(left, startY + 164,
+            'Thanks for playing this build. The full version will continue to grow as more assets, stages, and systems are added.',
             bodyStyle).setDepth(25);
 
         this.signature = this.add.text(left, this.cardY + this.cardH - 52, 'SEKAI / 25-ji Metroidvania', {
             fontSize: '13px',
+            fontFamily: 'monospace',
+            color: '#4a6a9f',
+        }).setDepth(25);
+    }
+
+    _createStatsPanel() {
+        const panelW = 220;
+        const panelH = 234;
+        const x = this.cardX + this.cardW - panelW - 24;
+        const y = this.cardY + 112;
+
+        const g = this.add.graphics().setDepth(24);
+        g.fillStyle(0x07101a, 0.96);
+        g.fillRoundedRect(x, y, panelW, panelH, 10);
+        g.lineStyle(1, 0x7FE0DE, 0.26);
+        g.strokeRoundedRect(x, y, panelW, panelH, 10);
+        g.lineStyle(1, 0x000000, 1);
+        g.strokeRoundedRect(x + 3, y + 3, panelW - 6, panelH - 6, 8);
+
+        this.add.text(x + 16, y + 14, 'RUN SUMMARY', {
+            fontSize: '14px',
+            fontFamily: 'monospace',
+            color: '#7FE0DE',
+        }).setDepth(25);
+
+        const hp = Phaser.Math.Clamp(this.playerData.hp ?? 0, 0, this.playerData.maxHp ?? 0);
+        const maxHp = this.playerData.maxHp ?? 0;
+        const feelings = this.playerData.feelings ?? 0;
+        const feelingsMax = this.playerData.feelingsMax ?? 100;
+        const abilities = this.playerData.abilities || {};
+        const abilityLine = [
+            abilities.dash ? 'DASH' : null,
+            abilities.doubleJump ? 'DOUBLE JUMP' : null,
+            abilities.sword ? 'SWORD' : null,
+        ].filter(Boolean).join(' / ') || 'NONE';
+
+        const lines = [
+            `BOSS CLEARED`,
+            `HP ${hp}/${maxHp}`,
+            `FEELINGS ${feelings}/${feelingsMax}`,
+            `ABILITIES ${abilityLine}`,
+            `STATUS DEMO END`,
+        ];
+
+        lines.forEach((line, i) => {
+            this.add.text(x + 16, y + 50 + i * 30, line, {
+                fontSize: i === 0 ? '15px' : '13px',
+                fontFamily: 'monospace',
+                color: i === 0 ? '#ffffff' : '#c8d8ff',
+            }).setDepth(25);
+        });
+
+        const footer = this.add.text(x + 16, y + panelH - 20, 'RETURN TO MENU AFTER REVIEW', {
+            fontSize: '11px',
             fontFamily: 'monospace',
             color: '#4a6a9f',
         }).setDepth(25);

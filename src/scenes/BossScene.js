@@ -457,7 +457,7 @@ class BossScene extends Phaser.Scene {
             ease: 'Sine.easeOut',
         });
 
-        const victoryText = this.add.text(this.arenaW / 2, 168, 'MAFUYU FALLS', {
+        const victoryText = this.add.text(this.arenaW / 2, 162, 'MAFUYU FALLS', {
             fontSize: '30px',
             fontFamily: 'monospace',
             color: '#ffffff',
@@ -466,13 +466,13 @@ class BossScene extends Phaser.Scene {
             align: 'center',
         }).setOrigin(0.5).setDepth(200).setAlpha(0);
 
-        const subText = this.add.text(this.arenaW / 2, 210, 'MEMORY FRAGMENT ACQUIRED', {
+        const subText = this.add.text(this.arenaW / 2, 204, 'DEMO COMPLETE UNLOCKED', {
             fontSize: '16px',
             fontFamily: 'monospace',
             color: '#7FE0DE',
         }).setOrigin(0.5).setDepth(200).setAlpha(0);
 
-        const prompt = this.add.text(this.arenaW / 2, 250, 'RETURNING TO THE OUTER MENU', {
+        const prompt = this.add.text(this.arenaW / 2, 248, 'OPENING THE END PAGE', {
             fontSize: '13px',
             fontFamily: 'monospace',
             color: '#a8d8ff',
@@ -506,7 +506,7 @@ class BossScene extends Phaser.Scene {
         this.time.delayedCall(3000, () => {
             this.cameras.main.fadeOut(1000, 0, 0, 0);
             this.time.delayedCall(1100, () => {
-                SceneManager.finishOverlay(this, { victory: true });
+                SceneManager.finishOverlay(this, { victory: true, demoComplete: true });
             });
         });
     }

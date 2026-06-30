@@ -1676,18 +1676,9 @@ class GameScene extends Phaser.Scene {
         };
         this.input.keyboard.on('keydown-TAB', this._tabHandler);
 
-        // Map view toggle (M)
-        this._mapKeyHandler = (event) => {
-            const hud = this.scene.get('HUDScene');
-            if (hud && hud.mapView) hud.mapView.toggle();
-            if (event) event.preventDefault();
-        };
-        this.input.keyboard.on('keydown-M', this._mapKeyHandler);
-
         this.events.once('shutdown', () => {
             this.input.keyboard.off('keydown-J', this._attackHandlerJ);
             this.input.keyboard.off('keydown-TAB', this._tabHandler);
-            this.input.keyboard.off('keydown-M', this._mapKeyHandler);
             if (this.input) this.input.off('pointerdown', this._pointerActionHandler);
             if (this.npcs) this.npcs.forEach(n => n.destroy());
             if (this.chapterBg) { this.chapterBg.destroy(); this.chapterBg = null; }

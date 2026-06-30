@@ -12,6 +12,7 @@ class MapView {
         this._physicsPausedByMap = false;
         this._stateHash = '';
         this._playerFacingRight = true;
+        this._onClose = null;
 
         this.rooms = this._collectRooms();
         this.roomIndex = new Map(this.rooms.map(room => [room.id, room]));
@@ -96,17 +97,29 @@ class MapView {
         return roomDef.mapPOIs.map(type => ({ type }));
     }
 
-    toggle() {
+    toggle(options = {}) {
         if (this.isOpen) this._close();
-        else this._open();
+        else this._open(options);
     }
 
-    _open() {
+    open(options = {}) {
+        this._open(options);
+    }
+
+    close(options = {}) {
+        this._close(!!options.skipCallback);
+    }
+
+    _open(options = {}) {
         if (this.destroyed) return;
-        if (this.scene.pauseMenu && this.scene.pauseMenu.isPaused) return;
-        if (this.scene.scene && this.scene.scene.isPaused()) return;
+        const allowWhilePaused = !!options.allowWhilePaused;
+        if (!allowWhilePaused) {
+            if (this.scene.pauseMenu && this.scene.pauseMenu.isPaused) return;
+            if (this.scene.scene && this.scene.scene.isPaused()) return;
+        }
 
         this.isOpen = true;
+        this._onClose = typeof options.onClose === 'function' ? options.onClose : null;
         this._savedZoom = this.scene.cameras.main.zoom;
         this.scene.cameras.main.setZoom(1);
         this.container.setVisible(true);
@@ -137,9 +150,11 @@ class MapView {
         });
     }
 
-    _close() {
+    _close(skipCallback = false) {
         if (this.destroyed) return;
         this.isOpen = false;
+        const onClose = this._onClose;
+        this._onClose = null;
         if (this._savedZoom !== undefined) {
             this.scene.cameras.main.setZoom(this._savedZoom);
             this._savedZoom = undefined;
@@ -158,6 +173,7 @@ class MapView {
             ease: 'Sine.easeIn',
             onComplete: () => {
                 if (this.container) this.container.setVisible(false);
+                if (!skipCallback && onClose) onClose();
             },
         });
     }
