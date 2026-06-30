@@ -70,7 +70,6 @@ class MapView {
             this.helpText,
         ]);
 
-        this._buildKeyboard();
         scene.events.once('shutdown', () => this.destroy());
     }
 
@@ -95,15 +94,6 @@ class MapView {
     _collectPOIs(roomDef) {
         if (!roomDef || !roomDef.mapPOIs) return [];
         return roomDef.mapPOIs.map(type => ({ type }));
-    }
-
-    _buildKeyboard() {
-        this._toggleHandler = (event) => {
-            if (this.destroyed) return;
-            this.toggle();
-            if (event) event.preventDefault();
-        };
-        this.scene.input.keyboard.on('keydown-M', this._toggleHandler);
     }
 
     toggle() {
@@ -574,10 +564,6 @@ class MapView {
         if (this.destroyed) return;
         this.destroyed = true;
         this.isOpen = false;
-
-        if (this.scene && this.scene.input && this.scene.input.keyboard) {
-            this.scene.input.keyboard.off('keydown-M', this._toggleHandler);
-        }
 
         this._clearRoomLabels();
         this._clearExitMarkers();

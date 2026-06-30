@@ -313,11 +313,14 @@ const ROOMS = {
     groundTexture: 'ground_mid',
     tint: { color: 0x100a22, alpha: 0.2 },
     exits: [
-      { x: 300, y: 954, w: 100, h: 10, dir: 'down', targetRoom: 'mid', targetX: 660, targetY: 60 },
+      { x: 336, y: 924, w: 96, h: 10, dir: 'down', targetRoom: 'mid', targetX: 660, targetY: 60 },
       { x: 708, y: 384, w: 10, h: 160, dir: 'right', targetRoom: 'preboss', targetX: 48, targetY: 384 },
       { x: 0, y: 624, w: 10, h: 60, dir: 'left', targetRoom: 'ascent', targetX: 900, targetY: 60 },
     ],
-    ground: [{ x: 0, w: 15 }],
+    ground: [
+      { x: 0, w: 5 },     // left slab  cols 0-19 (320px)
+      { x: 7, w: 4.25 },  // right slab cols 28-44 (272px) — center hole: cols 20-27 = 128px
+    ],
     platforms: [
       // ── FLOOR 5: SUMMIT (surface 144, row 9) — 2 slabs, gap 240-336 ──
       { x: 0,   y: 168, w: 3.75 },  // left slab  0→240
@@ -360,7 +363,7 @@ const ROOMS = {
       { id: 'bat_shaft_2', type: 'bat', x: 500, y: 290, noGravity: true },
       { id: 'cr_shaft_0', type: 'crystal', x: 288, y: 290, noGravity: true },
       { id: 'bl_shaft_0', type: 'bloated', x: 180, y: 900 },
-      { id: 'sk_shaft_0', type: 'skeleton', x: 120, y: 450 },
+      { id: 'sk_shaft_0', type: 'skeleton', x: 500, y: 450 },
     ],
     collectibles: [
       { type: 'hp_up', saveId: 'hp_3', x: 144, y: 130, value: 10 },

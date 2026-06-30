@@ -417,8 +417,9 @@ class PauseMenu {
         this._toggleHandler = (event) => {
             if (this.destroyed) return;
             // Character panel open → close it instead of toggling pause
-            if (this.scene.characterPanel && this.scene.characterPanel.isOpen) {
-                this.scene.characterPanel._close();
+            const hud = this.scene.scene.get('HUDScene');
+            if (hud && hud.characterPanel && hud.characterPanel.isOpen) {
+                hud.characterPanel._close();
                 if (event) event.preventDefault();
                 return;
             }
@@ -764,8 +765,9 @@ class PauseMenu {
                 break;
             case 'status':
                 this._close();
-                if (this.scene.characterPanel) {
-                    this.scene.characterPanel.toggle();
+                const hud = this.scene.scene.get('HUDScene');
+                if (hud && hud.characterPanel) {
+                    hud.characterPanel.toggle();
                 }
                 break;
             case 'save':

@@ -42,9 +42,8 @@ class GameScene extends Phaser.Scene {
         // Room system init
         this._initRoomSystem();
 
-        // Mobile controls
-        this.mobileControls = new MobileControls(this);
-        if (ControlMode.isMobile()) this.mobileControls.show();
+        // Mobile controls (created in HUDScene for viewport-fixed rendering)
+        this.mobileControls = null;
 
         // Player + input (once, scene-level)
         this._createPlayer();
@@ -61,8 +60,6 @@ class GameScene extends Phaser.Scene {
         this.scene.launch('HUDScene');
         this.hud = this.scene.get('HUDScene');
         this.pauseMenu = new PauseMenu(this);
-        this.mapView = new MapView(this);
-        this.characterPanel = new CharacterPanel(this);
 
         // Audio — start exploration BGM
         this._setupBGM();
@@ -89,10 +86,7 @@ class GameScene extends Phaser.Scene {
         this.events.once('shutdown', () => {
             this.scene.stop('HUDScene');
             this._stopBgm();
-            if (this.characterPanel) { this.characterPanel.destroy(); this.characterPanel = null; }
-            if (this.mapView) { this.mapView.destroy(); this.mapView = null; }
             if (this.pauseMenu) { this.pauseMenu.destroy(); this.pauseMenu = null; }
-            if (this.mobileControls) { this.mobileControls.destroy(); this.mobileControls = null; }
         });
     }
 
@@ -576,6 +570,12 @@ class GameScene extends Phaser.Scene {
             this.destructibleWalls = [];
         }
 
+        // Destroy gap bridge group (shaft enemy-only collision)
+        if (this._gapBridgeGroup) {
+            this._gapBridgeGroup.destroy(true);
+            this._gapBridgeGroup = null;
+        }
+
         // Destroy moving platforms
         if (this._movingPlatforms) {
             this._movingPlatforms.forEach(mp => mp.destroy());
@@ -782,8 +782,10 @@ class GameScene extends Phaser.Scene {
         if (!canLook) {
             this._cameraLookTargetOffsetY = 0;
         } else {
-            const lookingUp = this.keys.up && this.keys.up.isDown;
-            const lookingDown = this.keys.down && this.keys.down.isDown;
+            const mobileUp = this.mobileControls && this.mobileControls.up;
+            const mobileDown = this.mobileControls && this.mobileControls.down;
+            const lookingUp = (this.keys.up && this.keys.up.isDown) || mobileUp;
+            const lookingDown = (this.keys.down && this.keys.down.isDown) || mobileDown;
             if (lookingUp && !lookingDown) {
                 this._cameraLookTargetOffsetY = 160;
             } else if (lookingDown && !lookingUp) {
@@ -1011,6 +1013,30 @@ class GameScene extends Phaser.Scene {
                 (_, enemySprite) => this._onEnemyTouchPlayer(enemySprite), null, this,
             );
             this._roomColliders.push(tOverlap);
+
+            // ── Shaft room: invisible enemy-only collision bridges in floor gaps ──
+            if (this.currentRoomId === 'shaft') {
+                this._gapBridgeGroup = this.physics.add.staticGroup();
+                const gapBridges = [
+                    // Each bridge covers the full gap between left slab (cols 0-14, x=0-240)
+                    // and right slab (cols 28-51, x=448-832). Gap = x=240-448 (208px).
+                    // Bridge center at x=344, width=208. Elevator passes through bridge
+                    // freely (no collider set up between elevator and bridge).
+                    { x: 344, y: 152, w: 208, h: 16 },  // F5: surface 144
+                    { x: 344, y: 312, w: 208, h: 16 },  // F4: surface 304
+                    { x: 344, y: 472, w: 208, h: 16 },  // F3: surface 464
+                    { x: 344, y: 600, w: 208, h: 16 },  // F2: surface 592
+                    { x: 344, y: 744, w: 208, h: 16 },  // F1: surface 736
+                ];
+                for (const g of gapBridges) {
+                    const zone = this.add.zone(g.x, g.y, 1, 1);
+                    this.physics.add.existing(zone, true);
+                    zone.body.setSize(g.w, g.h);
+                    this._gapBridgeGroup.add(zone);
+                }
+                const bridgeColl = this.physics.add.collider(this.enemyGroup, this._gapBridgeGroup);
+                this._roomColliders.push(bridgeColl);
+            }
         }
     }
 
@@ -1572,15 +1598,23 @@ class GameScene extends Phaser.Scene {
         // Character panel toggle (Tab)
         this._tabHandler = (event) => {
             event.preventDefault();
-            if (this.characterPanel) {
-                this.characterPanel.toggle();
-            }
+            const hud = this.scene.get('HUDScene');
+            if (hud && hud.characterPanel) hud.characterPanel.toggle();
         };
         this.input.keyboard.on('keydown-TAB', this._tabHandler);
+
+        // Map view toggle (M)
+        this._mapKeyHandler = (event) => {
+            const hud = this.scene.get('HUDScene');
+            if (hud && hud.mapView) hud.mapView.toggle();
+            if (event) event.preventDefault();
+        };
+        this.input.keyboard.on('keydown-M', this._mapKeyHandler);
 
         this.events.once('shutdown', () => {
             this.input.keyboard.off('keydown-J', this._attackHandlerJ);
             this.input.keyboard.off('keydown-TAB', this._tabHandler);
+            this.input.keyboard.off('keydown-M', this._mapKeyHandler);
             if (this.input) this.input.off('pointerdown', this._pointerActionHandler);
             if (this.npcs) this.npcs.forEach(n => n.destroy());
             if (this.chapterBg) { this.chapterBg.destroy(); this.chapterBg = null; }
@@ -2093,14 +2127,21 @@ class GameScene extends Phaser.Scene {
             this._pendingHudRefresh = false;
         }
 
+        // Lazy-init mobile controls proxy from HUDScene (created there for viewport-fixed rendering)
+        if (!this.mobileControls && this.hud && this.hud.mobileControls) {
+            this.mobileControls = this.hud.mobileControls;
+            if (ControlMode.isMobile()) this.mobileControls.show();
+        }
+
         // Update the map overlay even when paused (so player marker moves)
-        if (this.mapView) {
-            this.mapView.update(this.currentRoomId, this.player.x, this.player.y, this.visitedRooms, this.player ? !this.player.sprite.flipX : undefined);
+        const hud = this.scene.get('HUDScene');
+        if (hud && hud.mapView) {
+            hud.mapView.update(this.currentRoomId, this.player.x, this.player.y, this.visitedRooms, this.player ? !this.player.sprite.flipX : undefined);
         }
 
         // Update character panel if open
-        if (this.characterPanel && this.characterPanel.isOpen) {
-            this.characterPanel.refresh(this.player, this.visitedRooms, this.enemiesKilled);
+        if (hud && hud.characterPanel && hud.characterPanel.isOpen) {
+            hud.characterPanel.refresh(this.player, this.visitedRooms, this.enemiesKilled);
         }
 
         if (this.pauseMenu.isPaused || this.scene.isPaused()) return;

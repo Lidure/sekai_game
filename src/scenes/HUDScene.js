@@ -76,10 +76,25 @@ class HUDScene extends Phaser.Scene {
         }
         this._lastAbilityState = null;
 
+        // Character panel & map view (viewport-fixed UI, unaffected by GameScene camera zoom)
+        this.characterPanel = new CharacterPanel(this);
+        this.mapView = new MapView(this);
+
+        // Mobile controls (viewport-fixed touch buttons)
+        this.mobileControls = new MobileControls(this);
+        if (ControlMode.isMobile()) this.mobileControls.show();
+
         this._layout();
 
         this.isReady = true;
         this.scale.on('resize', this._layout, this);
+
+        // Clean up on scene shutdown
+        this.events.once('shutdown', () => {
+            if (this.characterPanel) { this.characterPanel.destroy(); this.characterPanel = null; }
+            if (this.mapView) { this.mapView.destroy(); this.mapView = null; }
+            if (this.mobileControls) { this.mobileControls.destroy(); this.mobileControls = null; }
+        });
     }
 
     showNpcDialogue(name, text, indicator = '') {

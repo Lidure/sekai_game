@@ -24,7 +24,7 @@ sekai_game/
 ├── src/                    # ★ 游戏核心代码（模块化）
 │   ├── SceneManager.js     # 场景过渡管理（goTo / launchOverlay / finishOverlay）
 │   │                       # 也定义 GAME_FONTS 全局字体样式
-│   ├── HUD.js              # 界面系统（生命值、Feelings 条、Boss 血条、连击显示、能力图标）
+│   ├── SceneManager.js     # 场景过渡管理 / 全局字体（同上）
 │   │
 │   ├── entities/
 │   │   ├── Player.js       # 玩家 Mafuyu（状态机、3种攻击+剑技3连击、冲刺、二段跳、连击、受击、死亡）
@@ -52,7 +52,8 @@ sekai_game/
 │   │   ├── MenuScene.js      # 主菜单（粒子背景、标题动画、NEW GAME/CONTINUE/CREDITS）
 │   │   ├── GameScene.js      # 主游戏关卡（房间式架构，960×720/房间，8个房间）
 │   │   ├── BossScene.js      # Boss 战（叠加层模式，GameScene 暂停）
-│   │   └── CreditsScene.js   # 滚动致谢名单
+│   │   ├── CreditsScene.js   # 滚动致谢名单
+│   │   └── HUDScene.js       # UI 覆盖层（HP/feelings/combo/能力图标 + NPC 对话框 + CharacterPanel + MapView）
 │   │
 │   └── ui/
 │       ├── PauseMenu.js      # 暂停菜单（Resume/Status/Save/MainMenu/Fullscreen/Language/主音量滑块）
@@ -232,6 +233,7 @@ BootScene → MenuScene → GameScene ←→ BossScene (叠加层)
 - [x] 血量 HUD 已放大并增加更强的轮廓/发光感，读档后必须通过 `HUDScene.refreshFromPlayer()` 立即重画，不要只改数值不刷新显示
 - [x] `HUDScene` 可能晚于 `GameScene` 完成初始化，读档后的 HUD 刷新必须支持延迟补绘，不能依赖启动顺序
 - [x] 存档槽里的血量展示必须使用 `ui_hp_mask`，不要再用旧的程序化心形图形
+- [x] **Sprint 10**：移动端虚拟按键系统（joystick + 3 action buttons，PC/Mobile 切换）、viewport-fixed UI 迁移（CharacterPanel/MapView/MobileControls → HUDScene）、3 个已知 BUG 修复、shaft 地面中央破洞（128px gap）
 
 ### ❌ 未完成 / 待改进
 - [x] **程序化纹理替换**：`enemy_shadow`(slime)/`enemy_shard`(ghost)/`enemy_bat`(bat)/`enemy_skeleton`(spritesheet) 已用实际像素素材替代
@@ -318,17 +320,19 @@ BootScene → MenuScene → GameScene ←→ BossScene (叠加层)
 4. ✅ 新房间"THE VOID"
 5. ✅ 地图 UI HK 风格重设计
 6. ✅ 角色信息面板
-7. ❌ 全流程游戏内验证
+7. ✅ CharacterPanel + MapView 迁移至 HUDScene（viewport-fixed UI，不受 GameScene camera zoom 影响）
+8. ❌ 全流程游戏内验证
 8. ❌ Boss attack 纹理修复
 
-**Sprint 10（当前）- 移动端操作支持：**
+**Sprint 10（已完成）- 移动端操作支持 + shaft 地面修复：**
 1. ✅ `MobileControls.js`：虚拟按键（圆型按钮，半透明深色底+青色边框），支持左/右/跳跃/攻击/冲刺
 2. ✅ `ControlMode`：localStorage 持久化 PC/Mobile 切换
 3. ✅ `MenuScene` 设置页增加 Controls 切换选项
 4. ✅ `GameScene` 集成：创建 MobileControls + 暂停时重置防幻触
 5. ✅ `Player` 集成：移动端按钮输入与键盘输入一起处理
 6. ✅ NPC 对话支持移动端攻击按钮操作
-7. ❌ 真机/浏览器测试
+7. ✅ **shaft 地面中央破洞**：full-width ground 拆为左右两半（128px gap，cols 20-27），player 从 mid→shaft UP 入口（x=400, y=900）落地在左侧 slab，可通过中心空洞前往电梯区
+8. ❌ 真机/浏览器测试
 
 ### 🔴 已知 BUG（待修复）
 - **Boss 攻击纹理**：`melee_active` 状态使用 `boss_attack` 纹理而非 `boss_melee1`（需用户提供素材）
@@ -353,7 +357,7 @@ BootScene → MenuScene → GameScene ←→ BossScene (叠加层)
 
 ---
 
-**最后更新时间**：2026-06-29（Sprint 10 进行中：移动端虚拟按键 + PC/Mobile 切换 + 全流程测试）
+**最后更新时间**：2026-06-30（Sprint 10 已完成：移动端虚拟按键 + PC/Mobile 切换 + shaft 地面裂口 + 全流程测试）
 **维护者**：lidure
 
 ## Relevant Files
