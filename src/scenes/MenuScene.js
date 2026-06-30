@@ -40,6 +40,9 @@ class MenuScene extends Phaser.Scene {
         this.settingsLanguageText = null;
         this.hintText = null;
         this.versionText = null;
+        this.deviceSelectorOpen = false;
+        this.deviceSelectorSelected = 0;
+        this.deviceSelectorOverlay = null;
 
         // Defensive cleanup so returning from gameplay never leaves old BGM behind.
         ['bgm_menu', 'bgm_explore', 'bgm_boss_p1', 'bgm_boss_p2'].forEach((key) => {
@@ -66,13 +69,18 @@ class MenuScene extends Phaser.Scene {
         // Fade in on entry
         this.cameras.main.fadeIn(500);
 
-        // Enable input after stagger animation finishes
-        // Items animate: 0ms, 200ms, 400ms delays, each takes 400ms
-        // => last finishes at 400 + 400 = 800ms, add buffer
-        this.time.delayedCall(1000, () => {
-            this.inputEnabled = true;
-            this._updateSelection();
-        });
+        // Check first launch — show device selector before enabling menu
+        const existingMode = (() => { try { return localStorage.getItem(CONTROL_MODE_KEY); } catch (_) { return null; } })();
+        if (existingMode === null) {
+            // Hide hint text until selection is made
+            if (this.hintText) this.hintText.setAlpha(0);
+
+            this.time.delayedCall(600, () => {
+                this._showDeviceSelector();
+            });
+        } else {
+            this._enableMenuAfterStagger();
+        }
     }
 
     update(time, delta) {
@@ -393,11 +401,174 @@ class MenuScene extends Phaser.Scene {
         this._fullscreenChangeHandler = null;
     }
 
+    /* ------------------------------------------------------------------ */
+    /*  Device Selector (first-launch only)                                 */
+    /* ------------------------------------------------------------------ */
+
+    _enableMenuAfterStagger() {
+        this.time.delayedCall(1000, () => {
+            this.inputEnabled = true;
+            this._updateSelection();
+        });
+    }
+
+    _showDeviceSelector() {
+        if (this.deviceSelectorOverlay) return;
+        this.deviceSelectorOpen = true;
+        this.deviceSelectorSelected = 0;
+        const w = this.scale.width;
+        const h = this.scale.height;
+        const cx = w / 2;
+
+        const container = this.add.container(0, 0).setDepth(50);
+
+        // Dim background
+        const dim = this.add.graphics();
+        dim.fillStyle(0x000000, 0.7);
+        dim.fillRect(0, 0, w, h);
+        container.add(dim);
+
+        // Panel
+        const panelW = 360;
+        const panelH = 260;
+        const px = (w - panelW) / 2;
+        const py = (h - panelH) / 2 - 20;
+
+        const panel = this.add.graphics();
+        panel.fillStyle(0x0a0a1a, 0.97);
+        panel.fillRoundedRect(px, py, panelW, panelH, 12);
+        panel.lineStyle(1.5, 0x2EC4B6, 0.34);
+        panel.strokeRoundedRect(px, py, panelW, panelH, 12);
+        container.add(panel);
+
+        // Title
+        const title = this.add.text(cx, py + 36, Lang.t('selectDevice'), {
+            fontSize: '20px', fontFamily: 'monospace', color: '#7FE0DE',
+        }).setOrigin(0.5);
+        container.add(title);
+
+        // Decorative line
+        const deco = this.add.graphics();
+        deco.lineStyle(1, 0x2a6a9f, 0.3);
+        deco.lineBetween(cx - 100, py + 60, cx + 100, py + 60);
+        container.add(deco);
+
+        // Options
+        const opts = [
+            { label: Lang.t('selectDevicePC'), mode: 'pc' },
+            { label: Lang.t('selectDeviceMobile'), mode: 'mobile' },
+        ];
+        const optY = py + 106;
+        const optGap = 58;
+        this._deviceOptionTexts = [];
+
+        opts.forEach((opt, i) => {
+            const y = optY + i * optGap;
+
+            const bg = this.add.graphics();
+            bg.fillStyle(0x1a1a3e, 0.6);
+            bg.fillRoundedRect(cx - 130, y - 18, 260, 40, 6);
+            bg.lineStyle(1, 0x2EC4B6, 0.2);
+            bg.strokeRoundedRect(cx - 130, y - 18, 260, 40, 6);
+            bg.setInteractive(new Phaser.Geom.Rectangle(cx - 130, y - 18, 260, 40), Phaser.Geom.Rectangle.Contains);
+            bg.on('pointerover', () => {
+                this.deviceSelectorSelected = i;
+                this._updateDeviceSelectorVisuals();
+            });
+            bg.on('pointerup', () => {
+                this.deviceSelectorSelected = i;
+                this._selectDevice(opt.mode);
+            });
+            container.add(bg);
+
+            const txt = this.add.text(cx, y, opt.label, {
+                fontSize: '15px', fontFamily: 'monospace', color: '#a8d8ff',
+            }).setOrigin(0.5);
+            container.add(txt);
+
+            this._deviceOptionTexts.push({ bg, txt, bgGraphics: bg });
+        });
+
+        // Hint
+        const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        const hintText = isMobile ? Lang.t('selectDeviceHintMobile') : Lang.t('selectDeviceHint');
+        const hint = this.add.text(cx, py + panelH - 18, hintText, {
+            fontSize: '12px', fontFamily: 'monospace', color: '#3a4a6a',
+        }).setOrigin(0.5);
+        container.add(hint);
+
+        this.deviceSelectorOverlay = container;
+        this._updateDeviceSelectorVisuals();
+    }
+
+    _updateDeviceSelectorVisuals() {
+        if (!this._deviceOptionTexts) return;
+        this._deviceOptionTexts.forEach((item, i) => {
+            const selected = i === this.deviceSelectorSelected;
+            item.bgGraphics.clear();
+            item.bgGraphics.fillStyle(selected ? 0x1a3a5a : 0x1a1a3e, selected ? 0.5 : 0.4);
+            item.bgGraphics.fillRoundedRect(236 - 130, (106 + i * 58) - 18, 260, 40, 6);
+            item.bgGraphics.lineStyle(1, selected ? 0x00ffcc : 0x2EC4B6, selected ? 0.5 : 0.15);
+            item.bgGraphics.strokeRoundedRect(236 - 130, (106 + i * 58) - 18, 260, 40, 6);
+            item.txt.setColor(selected ? '#7FE0DE' : '#5a7a9a');
+        });
+    }
+
+    _selectDevice(mode) {
+        ControlMode.set(mode);
+        this.deviceSelectorOpen = false;
+        if (this.deviceSelectorOverlay) {
+            this.deviceSelectorOverlay.destroy();
+            this.deviceSelectorOverlay = null;
+        }
+        this._deviceOptionTexts = null;
+        if (this.hintText) {
+            this.tweens.killTweensOf(this.hintText);
+            this.hintText.setAlpha(0.3).setText(this._getStartHint());
+            this.tweens.add({
+                targets: this.hintText,
+                alpha: { from: 0.3, to: 1 },
+                duration: 900,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut',
+            });
+        }
+        this._enableMenuAfterStagger();
+    }
+
+    _handleDeviceSelectorInput() {
+        if (!this.deviceSelectorOpen) return;
+
+        if (Phaser.Input.Keyboard.JustDown(this.cursors.up) ||
+            Phaser.Input.Keyboard.JustDown(this.keyW)) {
+            this.deviceSelectorSelected = this.deviceSelectorSelected === 0 ? 1 : 0;
+            this._updateDeviceSelectorVisuals();
+        }
+
+        if (Phaser.Input.Keyboard.JustDown(this.cursors.down) ||
+            Phaser.Input.Keyboard.JustDown(this.keyS)) {
+            this.deviceSelectorSelected = this.deviceSelectorSelected === 0 ? 1 : 0;
+            this._updateDeviceSelectorVisuals();
+        }
+
+        if (Phaser.Input.Keyboard.JustDown(this.keyJ) ||
+            Phaser.Input.Keyboard.JustDown(this.keySpace) ||
+            Phaser.Input.Keyboard.JustDown(this.keyEnter)) {
+            const mode = this.deviceSelectorSelected === 0 ? 'pc' : 'mobile';
+            this._selectDevice(mode);
+        }
+    }
+
     _handleInput() {
         // Save picker is self-contained with its own key handlers
         if (this.savePicker && !this.savePicker.destroyed) return;
         if (this.settingsOpen) {
             this._handleSettingsInput();
+            return;
+        }
+        if (this.deviceSelectorOpen) {
+            this._handleDeviceSelectorInput();
             return;
         }
         if (!this.inputEnabled) return;
