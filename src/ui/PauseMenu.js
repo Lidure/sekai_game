@@ -522,6 +522,9 @@ class PauseMenu {
         this.isOpen = true;
         this.inputEnabled = false;
 
+        // Hide mobile controls under pause overlay
+        if (this.scene.mobileControls) this.scene.mobileControls.hide();
+
         this._savedZoom = this.scene.cameras.main.zoom;
         this._savedScroll = { x: this.scene.cameras.main.scrollX, y: this.scene.cameras.main.scrollY };
         this.selectedIndex = 0;
@@ -572,6 +575,30 @@ class PauseMenu {
         });
     }
 
+    toggle() {
+        if (this.destroyed) return;
+        const hud = this.scene.scene.get('HUDScene');
+        if (hud && hud.characterPanel && hud.characterPanel.isOpen) {
+            hud.characterPanel._close();
+            return;
+        }
+        if (this.savePicker && !this.savePicker.destroyed) {
+            this.savePicker._cancel();
+            this.savePicker = null;
+            return;
+        }
+        if (this.confirmMode) {
+            this._closeConfirm();
+            return;
+        }
+        if (this.isOpen) {
+            this._close();
+        } else {
+            this._tryPlaySound('sfx_ui_navigate', 0.25);
+            this._open();
+        }
+    }
+
     _close() {
         if (this.destroyed) return;
 
@@ -604,10 +631,14 @@ class PauseMenu {
             this.scene.physics.resume();
         }
 
-        // Reset mobile controls just-pressed to prevent phantom inputs
+        // Reset + restore mobile controls
         if (this.scene.mobileControls) {
             this.scene.mobileControls.resetJustPressed();
+            if (ControlMode.isMobile()) this.scene.mobileControls.show();
         }
+
+        // Flush keyboard state to prevent phantom inputs (e.g. K used for cancel also triggers jump)
+        this.scene.input.keyboard.resetKeys();
     }
 
     /* ================================================================== */

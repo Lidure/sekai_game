@@ -376,3 +376,6 @@ BootScene → MenuScene → GameScene ←→ BossScene (叠加层)
 - `src/systems/MovingPlatform.js`：移动平台电梯，垂直载人升降（shaft 房间 x=600, 96px 宽, 448px 行程, 60px/s）
 - `assets/maps/*.tmj`：9 房间，16×16 网格，平台 row T（TMJ y=0，无 -16 偏移），无装饰/长椅对象
 - `src/i18n.js`：本地化系统，中英文词典，localStorage 持久化语言设置，暂停菜单 LANGUAGE 切换
+## Boss Behavior Update
+- `BossMafuyu` now uses `cower` as a defensive/heal state in phase 1, and phase 2 starts only after phase 1 HP reaches 0.
+- Phase 2 HP refill is a fast tween from 0 to full HP, and `BossScene` now drives arena background progress from `hp / maxHp`.

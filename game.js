@@ -12,7 +12,7 @@ const config = {
         width: window.GAME_WIDTH,
         height: window.GAME_HEIGHT,
     },
-    scene: [BootScene, MenuScene, GameScene, BossScene, CreditsScene, HUDScene],
+    scene: [BootScene, MenuScene, GameScene, BossScene, DemoCompleteScene, CreditsScene, HUDScene],
     physics: {
         default: 'arcade',
         arcade: {

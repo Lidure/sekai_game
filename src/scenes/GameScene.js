@@ -113,6 +113,7 @@ class GameScene extends Phaser.Scene {
         this.enemiesKilled = [];
         this.collectedPersistentItems = [];
         this.abilityItemsCollected = [];
+        this.claimedNpcRewards = [];
         this._bossTriggered = false;
         this._bossDefeated = false;
         this._spawnedWallIds = [];
@@ -182,8 +183,13 @@ class GameScene extends Phaser.Scene {
     /** Register listener for overlay scene results with automatic cleanup. */
     _setupOverlayListener() {
         SceneManager.onOverlayResult(this, (data) => {
-            if (data.from !== 'BossScene') return;
-            this._onBossResult(data.result);
+            if (data.from === 'BossScene') {
+                this._onBossResult(data.result);
+                return;
+            }
+            if (data.from === 'DemoCompleteScene') {
+                this._onDemoCompleteResult(data.result);
+            }
         });
     }
 
@@ -194,7 +200,7 @@ class GameScene extends Phaser.Scene {
         // Audio — resume exploration BGM
         if (this.bgm && !this.bgm.isPlaying) this.bgm.resume();
 
-        // If user chose "MAIN MENU" from pause during boss fight
+        // If user chose "MAIN MENU" or returned from the demo-complete overlay
         if (result.goToMenu) {
             this._stopBgm();
             SceneManager.goTo(this, 'MenuScene');
@@ -206,6 +212,7 @@ class GameScene extends Phaser.Scene {
             this.player.feelings = Math.min(this.player.feelingsMax, this.player.feelings + 20);
             this.player.resetToIdle();
             this._bossDefeated = true;
+            this._showDemoCompleteScreen();
         }
         if (result.playerDied) {
             this.player.feelings = 0;
@@ -213,6 +220,27 @@ class GameScene extends Phaser.Scene {
             this.player.reset(48, 636, this.player.maxHp);
         }
         this.bossActive = false;
+    }
+
+    _showDemoCompleteScreen() {
+        SceneManager.launchOverlay(this, 'DemoCompleteScene', {
+            playerData: {
+                hp: this.player.hp,
+                maxHp: this.player.maxHp,
+                feelings: this.player.feelings,
+                feelingsMax: this.player.feelingsMax,
+                abilities: { ...this.player.abilities },
+            },
+        });
+    }
+
+    _onDemoCompleteResult(result) {
+        this.scene.resume();
+        this.input.keyboard.resetKeys();
+        if (result.goToMenu) {
+            this._stopBgm();
+            SceneManager.goTo(this, 'MenuScene');
+        }
     }
 
     /* ================================================================== */
@@ -255,7 +283,8 @@ class GameScene extends Phaser.Scene {
     }
 
     _setupBGM() {
-        this.bgm = AudioSettings.createBgm(this, 'bgm_explore', 0.30);
+        this._currentBgmKey = 'bgm_explore';
+        this.bgm = AudioSettings.createBgm(this, this._currentBgmKey, 0.30);
         this.bgm.play();
         this.tweens.add({
             targets: this.bgm,
@@ -421,7 +450,7 @@ class GameScene extends Phaser.Scene {
                         this._spawnBenches.push({ x: obj.x });
                         break;
                     case 'npc':
-                        this._spawnNPCs.push({ x: obj.x, y: obj.y, name: p.npcName, hairColor: p.hairColor, dialogues: JSON.parse(p.dialogues || '[]') });
+                        this._spawnNPCs.push({ x: obj.x, y: obj.y, name: p.npcName, npcKey: p.npcKey || p.npcName, hairColor: p.hairColor, dialogues: JSON.parse(p.dialogues || '[]') });
                         break;
                     case 'abilityItem':
                         this._spawnAbilityItems.push({ x: obj.x, y: obj.y, key: p.abilityKey, name: p.abilityName });
@@ -666,6 +695,36 @@ class GameScene extends Phaser.Scene {
             // Build new room
             this._buildRoom(roomDef);
 
+            // BGM override — switch to room-specific BGM if defined
+            const targetBgmKey = roomDef.bgmOverride || 'bgm_explore';
+            const targetBgmVol = roomDef.bgmOverride ? 0.25 : 0.30;
+            if (targetBgmKey !== this._currentBgmKey) {
+                if (this.bgm) {
+                    this.tweens.add({
+                        targets: this.bgm,
+                        volume: 0,
+                        duration: 150,
+                        onComplete: () => {
+                            this.bgm.stop();
+                            this.bgm.destroy();
+                            this.bgm = null;
+                        },
+                    });
+                }
+                this.time.delayedCall(200, () => {
+                    if (this.destroyed) return;
+                    this.bgm = AudioSettings.createBgm(this, targetBgmKey, targetBgmVol);
+                    this.bgm.play();
+                    this.tweens.add({
+                        targets: this.bgm,
+                        volume: AudioSettings.scale('bgm', targetBgmVol),
+                        duration: 800,
+                        ease: 'Sine.easeIn',
+                    });
+                    this._currentBgmKey = targetBgmKey;
+                });
+            }
+
             const entry = this._getRoomEntryPoint(roomDef, spawnX, spawnY, fromDir);
 
             // Position player
@@ -697,24 +756,20 @@ class GameScene extends Phaser.Scene {
         const marginX = 56;
         const marginY = 60;
 
-        let x = spawnX;
-        let y = spawnY;
+        // Use the authored target coordinates as the primary source of truth.
+        // The exit direction only affects facing / lock timing, not the landing
+        // position. That keeps room transitions bidirectional and prevents
+        // "door leads into floor" cases when a hand-authored room wants the
+        // entry point to land on a specific platform or landing.
+        let x = Phaser.Math.Clamp(spawnX ?? roomW / 2, marginX, roomW - marginX);
+        let y = Phaser.Math.Clamp(spawnY ?? roomH / 2, marginY, roomH - marginY);
 
-        if (fromDir === 'right') {
-            x = marginX;
-        } else if (fromDir === 'left') {
-            x = roomW - marginX;
-        } else {
-            x = Phaser.Math.Clamp(spawnX, marginX, roomW - marginX);
-        }
-
-        if (fromDir === 'down') {
-            y = marginY;
-        } else if (fromDir === 'up') {
-            y = roomH - marginY;
-        } else {
-            y = Phaser.Math.Clamp(spawnY, marginY, roomH - marginY);
-        }
+        // Keep a tiny safety buffer away from extreme edges so the player does
+        // not spawn inside wall trim or exit frame geometry.
+        if (x < marginX) x = marginX;
+        if (x > roomW - marginX) x = roomW - marginX;
+        if (y < marginY) y = marginY;
+        if (y > roomH - marginY) y = roomH - marginY;
 
         return { x, y };
     }
@@ -752,7 +807,7 @@ class GameScene extends Phaser.Scene {
 
         // Select profile based on room type
         let profile;
-        if (roomDef.id === 'shaft') {
+        if (roomDef.id === 'shaft' || roomDef.id === 'descent') {
             profile = CameraProfiles.shaft;
         } else if (roomDef.id === 'boss') {
             profile = CameraProfiles.boss;
@@ -1125,6 +1180,7 @@ class GameScene extends Phaser.Scene {
         for (const nDef of this._spawnNPCs) {
             const npc = new NPC(this, nDef.x, nDef.y, {
                 name: nDef.name,
+                npcKey: nDef.npcKey || nDef.name || 'npc_' + (this.npcs.length),
                 dialogues: nDef.dialogues,
                 hairColor: nDef.hairColor,
                 behavior: nDef.behavior,
@@ -1164,6 +1220,18 @@ class GameScene extends Phaser.Scene {
                 }, null, this,
             );
             this._roomColliders.push(overlap);
+        }
+    }
+
+    _giveNpcReward(reward) {
+        if (!reward || !this.player) return;
+        if (reward.type === 'hp_up') {
+            const hp = reward.value || 10;
+            this.player.maxHp += hp;
+            this.player.hp = Math.min(this.player.hp + hp, this.player.maxHp);
+            if (this.hud) this.hud.refreshFromPlayer();
+        } else {
+            console.warn('_giveNpcReward: unknown reward type:', reward.type);
         }
     }
 
@@ -1571,7 +1639,12 @@ class GameScene extends Phaser.Scene {
             if (this.isResting || this.player.dead) return;
             if (this.isTalking) {
                 if (this.talkingNPC) {
-                    const closed = this.talkingNPC.advanceDialogue();
+                    let closed = false;
+                    if (this.talkingNPC._choiceData) {
+                        closed = this.talkingNPC.confirmChoice();
+                    } else {
+                        closed = this.talkingNPC.advanceDialogue();
+                    }
                     if (closed) {
                         this.isTalking = false;
                         this.talkingNPC = null;
@@ -2033,6 +2106,7 @@ class GameScene extends Phaser.Scene {
             destroyedWalls: [...this._spawnedWallIds],
             visitedRooms: [...(this.visitedRooms || [this.currentRoomId])],
             bossDefeated: this._bossDefeated || false,
+            claimedNpcRewards: [...(this.claimedNpcRewards || [])],
             timestamp: Date.now(),
         };
         try {
@@ -2068,6 +2142,9 @@ class GameScene extends Phaser.Scene {
         }
         if (data.bossDefeated) {
             this._bossDefeated = true;
+        }
+        if (data.claimedNpcRewards) {
+            this.claimedNpcRewards = data.claimedNpcRewards;
         }
 
         // Determine target room
@@ -2191,8 +2268,27 @@ class GameScene extends Phaser.Scene {
         if (this.isTalking && this.talkingNPC) {
             const talkingNPC = this.talkingNPC;
             const mcAdvance = this.mobileControls && this.mobileControls.attackJustDown;
+
+            // Choice navigation
+            if (talkingNPC._choiceData) {
+                const mcUp = this.mobileControls && this.mobileControls.upJustDown;
+                const mcDown = this.mobileControls && this.mobileControls.downJustDown;
+                if (Phaser.Input.Keyboard.JustDown(this.keys.up) || mcUp) {
+                    talkingNPC.navigateChoice(-1);
+                }
+                if (Phaser.Input.Keyboard.JustDown(this.keys.down) || mcDown) {
+                    talkingNPC.navigateChoice(1);
+                }
+            }
+
+            // Advance dialogue or confirm choice
             if (Phaser.Input.Keyboard.JustDown(this.keys.attack) || mcAdvance) {
-                const closed = talkingNPC.advanceDialogue();
+                let closed = false;
+                if (talkingNPC._choiceData) {
+                    closed = talkingNPC.confirmChoice();
+                } else {
+                    closed = talkingNPC.advanceDialogue();
+                }
                 if (closed) {
                     this.isTalking = false;
                     this.talkingNPC = null;

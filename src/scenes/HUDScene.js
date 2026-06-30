@@ -68,6 +68,10 @@ class HUDScene extends Phaser.Scene {
         this._npcDialogName = '';
         this._npcDialogText = '';
         this._npcDialogIndicatorText = '';
+        this._npcChoiceVisible = false;
+        this._npcChoiceOptions = [];
+        this._npcChoiceSelected = 0;
+        this.npcChoiceTexts = [];
 
         this.abilityGraphics = [];
         for (let i = 0; i < 4; i++) {
@@ -123,6 +127,59 @@ class HUDScene extends Phaser.Scene {
         this.npcDialogName.setAlpha(0);
         this.npcDialogText.setAlpha(0);
         this.npcDialogIndicator.setAlpha(0);
+        this.hideNpcChoice();
+    }
+
+    showNpcChoice(options, selectedIndex) {
+        this._npcChoiceVisible = true;
+        this._npcChoiceOptions = options || [];
+        this._npcChoiceSelected = selectedIndex || 0;
+        this._layoutNpcChoice();
+    }
+
+    hideNpcChoice() {
+        this._npcChoiceVisible = false;
+        this._npcChoiceOptions = [];
+        this._npcChoiceSelected = 0;
+        for (const t of this.npcChoiceTexts) t.setAlpha(0);
+    }
+
+    _layoutNpcChoice() {
+        const w = this.scale.width;
+        const h = this.scale.height;
+        const boxW = Math.min(620, w - 48);
+        const boxH = 118;
+        const boxX = (w - boxW) / 2;
+        const boxY = h - boxH - 24;
+        const padX = 18;
+
+        const opts = this._npcChoiceOptions;
+        if (!opts || opts.length === 0) return;
+
+        // Ensure we have enough text objects
+        while (this.npcChoiceTexts.length < opts.length) {
+            const idx = this.npcChoiceTexts.length;
+            const t = this.add.text(0, 0, '', {
+                fontSize: '13px',
+                fontFamily: 'monospace',
+                color: '#7FE0DE',
+            }).setDepth(1002).setAlpha(0);
+            this.npcChoiceTexts.push(t);
+        }
+
+        const startY = boxY + 60;
+        for (let i = 0; i < opts.length; i++) {
+            const prefix = i === this._npcChoiceSelected ? '\u25B6 ' : '  ';
+            this.npcChoiceTexts[i].setText(prefix + opts[i].text);
+            this.npcChoiceTexts[i].setPosition(boxX + padX + 8, startY + i * 22);
+            this.npcChoiceTexts[i].setAlpha(1);
+            this.npcChoiceTexts[i].setColor(i === this._npcChoiceSelected ? '#7FF0DE' : '#5a7a7a');
+        }
+
+        // Hide excess texts
+        for (let i = opts.length; i < this.npcChoiceTexts.length; i++) {
+            this.npcChoiceTexts[i].setAlpha(0);
+        }
     }
 
     _layout() {

@@ -48,8 +48,8 @@ class Skeleton extends Enemy {
         this.sprite.setOrigin(0.5, 0.5);
         this._poseKey = 'enemy_skeleton_idle_anim';
         this._facingRight = true;
-        this._attackReach = 80;      // tightened from 88
-        this._attackHeight = 24;
+        this._attackReach = 92;
+        this._attackHeight = 26;
         this._strikeFired = false;
 
         // AI state
@@ -260,7 +260,7 @@ class Skeleton extends Enemy {
                             : (this.x - playerX);
                         const verticalDist = Math.abs(playerY - this.y);
 
-                        if (forwardDist >= -6 && forwardDist <= this._attackReach && verticalDist <= this._attackHeight) {
+                        if (forwardDist >= -8 && forwardDist <= this._attackReach && verticalDist <= this._attackHeight) {
                             const knockDir = this._facingRight ? 1 : -1;
                             this.scene.player.takeDamage(
                                 this.meleeDamage,
@@ -295,7 +295,7 @@ class Skeleton extends Enemy {
                 this._backstepTimer -= dtSec;
                 this._setPose('enemy_skeleton_run_anim');
                 // Hop backward (away from player)
-                this.body.setVelocityX(Math.sign(-dist) * 133); // ~40px over 0.3s
+                    this.body.setVelocityX(Math.sign(-dist) * 120); // ~36px over 0.3s
                 if (this._backstepTimer <= 0) {
                     this.body.setVelocityX(0);
                     this.state = 'approach';

@@ -7438,12 +7438,12 @@
             {
               "name": "targetRoom",
               "type": "string",
-              "value": "boss"
+              "value": "descent"
             },
             {
               "name": "targetX",
               "type": "int",
-              "value": 89
+              "value": 64
             },
             {
               "name": "targetY",

@@ -8,6 +8,8 @@ class CreditsScene extends Phaser.Scene {
         this.scrollComplete = false;
         this.particles = [];
         this.speedMultiplier = 1;
+        this._pointerDownTime = 0;
+        this._pointerIsDown = false;
 
         this._buildBackground();
         this._buildTitle();
@@ -121,7 +123,8 @@ class CreditsScene extends Phaser.Scene {
             color: '#7FE0DE',
         }).setOrigin(0.5).setDepth(10).setAlpha(0);
 
-        this.endReturn = this.add.text(this.scale.width / 2, 372, 'PRESS J TO RETURN', {
+        this.endReturn = this.add.text(this.scale.width / 2, 372,
+            ControlMode.isMobile() ? 'TAP TO RETURN' : 'PRESS J TO RETURN', {
             fontSize: '16px',
             fontFamily: 'monospace',
             color: '#4a6a9f',
@@ -215,7 +218,8 @@ class CreditsScene extends Phaser.Scene {
     }
 
     _buildHint() {
-        this.add.text(this.scale.width - 16, this.scale.height - 16, 'J: Speed Up   K: Skip', {
+        const hint = ControlMode.isMobile() ? 'HOLD: Speed Up   TAP: Skip' : 'J: Speed Up   K: Skip';
+        this.add.text(this.scale.width - 16, this.scale.height - 16, hint, {
             fontSize: '13px',
             fontFamily: 'monospace',
             color: '#4a6a9f',
@@ -276,6 +280,29 @@ class CreditsScene extends Phaser.Scene {
                 this._returnToMenu();
             } else if (!this.scrollComplete) {
                 this._skipScroll();
+            }
+        });
+
+        this.input.on('pointerdown', (pointer) => {
+            this._pointerDownTime = this.time.now;
+            this._pointerIsDown = true;
+            if (!this.scrollComplete && !this.canReturn) {
+                this.speedMultiplier = 5;
+            }
+        });
+
+        this.input.on('pointerup', () => {
+            const held = this.time.now - this._pointerDownTime;
+            this._pointerIsDown = false;
+            if (held < 300) {
+                if (this.canReturn) {
+                    this._returnToMenu();
+                } else if (!this.scrollComplete) {
+                    this._skipScroll();
+                }
+            }
+            if (!this.scrollComplete && !this.canReturn) {
+                this.speedMultiplier = 1;
             }
         });
     }

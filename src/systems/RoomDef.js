@@ -67,6 +67,26 @@ class RoomDef {
             mapPOIs: ['hp_up', 'feelings_up'],
             mapGrid: { x: 3, y: 0 },
         },
+        descent: {
+            id: 'descent', name: 'THE DESCENT',
+            tilemapKey: 'room_descent',
+            groundTexture: 'ground_abyss',
+            tint: { color: 0x0a0018, alpha: 0.35 },
+            bossTrigger: false,
+            mapPOIs: ['health'],
+            mapGrid: { x: 5, y: 1 },
+            cameraProfile: 'shaft',
+        },
+        sanctum: {
+            id: 'sanctum', name: 'SANCTUARY',
+            tilemapKey: 'room_sanctum',
+            groundTexture: 'ground_mid',
+            tint: { color: 0x1a0a0a, alpha: 0.15 },
+            bossTrigger: false,
+            mapPOIs: ['npc'],
+            mapGrid: { x: 4, y: 0 },
+            bgmOverride: 'bgm_credits',
+        },
         preboss: {
             id: 'preboss', name: 'PRE-BOSS',
             tilemapKey: 'room_preboss',
@@ -87,7 +107,7 @@ class RoomDef {
         },
     };
 
-    static ROOM_ORDER = ['intro', 'ascent', 'secret', 'void', 'lower', 'mid', 'shaft', 'preboss', 'boss'];
+    static ROOM_ORDER = ['intro', 'ascent', 'secret', 'void', 'lower', 'mid', 'shaft', 'preboss', 'descent', 'sanctum', 'boss'];
 
     static get(roomId) {
         return RoomDef.ROOMS[roomId] || null;
@@ -100,15 +120,16 @@ class RoomDef {
      */
     static CONNECTIONS = [
         ['intro', 'ascent'],
-        ['ascent', 'secret'],
         ['ascent', 'lower'],
         ['lower', 'mid'],
         ['mid', 'shaft'],
         ['mid', 'preboss'],
-        ['preboss', 'boss'],
+        ['preboss', 'descent'],
+        ['descent', 'sanctum'],
+        ['sanctum', 'boss'],
+        ['ascent', 'secret'],
         ['secret', 'void'],
-        ['void', 'lower'],
-        ['shaft', 'ascent'],    // shortcut
+        ['shaft', 'ascent'],
     ];
 
     /** Get all rooms adjacent to a given room. */

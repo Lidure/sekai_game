@@ -374,17 +374,118 @@ const ROOMS = {
     mapGrid: { x: 3, y: 0 },
   },
 
+  // ── DESCENT (vertical multi-floor, player has dash + sword) ──
+  // 3 floor slabs + ground, 5 platforms (ground→F3 staircase). RIGHT exit→sanctum at F1.
+  // Shaft-like center gap pattern (128px), 48px staircase steps.
+  descent: {
+    id: 'descent', name: 'THE DESCENT', width: 720, height: 960,
+    groundTexture: 'ground_abyss',
+    tint: { color: 0x0a0018, alpha: 0.35 },
+    exits: [
+      { x: 0, y: 624, w: 12, h: 60, dir: 'left', targetRoom: 'preboss', targetX: 893, targetY: 660 },
+      { x: 708, y: 336, w: 12, h: 60, dir: 'right', targetRoom: 'sanctum', targetX: 48, targetY: 660 },
+    ],
+    ground: [
+      { x: 0, w: 5 },     // left slab  0→320  (cols 0-19)
+      { x: 7, w: 4.25 },  // right slab 448→720 (cols 28-44), gap 320-448
+    ],
+    platforms: [
+      { x: 0,   y: 680, w: 3.75 },  // T=42  surface 672  F3 entry floor
+      { x: 336, y: 680, w: 6.0  },  // T=42  surface 672  F3 right
+      { x: 0,   y: 536, w: 3.75 },  // T=33  surface 528  F2 mid
+      { x: 336, y: 536, w: 6.0  },  // T=33  surface 528  F2 right
+      { x: 0,   y: 392, w: 3.75 },  // T=24  surface 384  F1 bottom exit floor
+      { x: 336, y: 392, w: 6.0  },  // T=24  surface 384  F1 right
+      // LEFT staircase F1→F2 (48px steps)
+      { x: 48,  y: 440, w: 0.75 },  // T=27  surface 432  step 1
+      { x: 96,  y: 488, w: 0.75 },  // T=30  surface 480  step 2
+      // LEFT staircase F2→F3 (48px steps)
+      { x: 48,  y: 584, w: 0.75 },  // T=36  surface 576  step 1
+      { x: 96,  y: 632, w: 0.75 },  // T=39  surface 624  step 2
+    ],
+    movingPlatforms: [],
+    enemies: [
+      { id: 'bat_desc_0', type: 'bat', x: 360, y: 600, noGravity: true },
+      { id: 'cr_desc_0', type: 'crystal', x: 288, y: 456, noGravity: true },
+      { id: 'sf_desc_0', type: 'shadow', x: 144, y: 348 },
+    ],
+    collectibles: [
+      { type: 'health', saveId: 'health_desc_1', x: 600, y: 656, value: 30, persistent: false },
+      { type: 'health', saveId: 'health_desc_2', x: 480, y: 368, value: 30, persistent: false },
+    ],
+    benches: [], npcs: [], abilityItems: [], abilityGates: [], oneWayDoors: [], destructibleWalls: [],
+    bossTrigger: false,
+    decorations: {},
+    mapGrid: { x: 5, y: 1 },
+  },
+
+  // ── SANCTUARY (pre-boss supply room) ──
+  // Small room (480×720), single NPC "K" with choice dialogue.
+  // Calm atmosphere, bgmOverride: 'bgm_credits', no enemies.
+  sanctum: {
+    id: 'sanctum', name: 'SANCTUARY', width: 480, height: 720,
+    groundTexture: 'ground_mid',
+    tint: { color: 0x1a0a0a, alpha: 0.15 },
+    exits: [
+      { x: 0, y: 624, w: 12, h: 60, dir: 'left', targetRoom: 'descent', targetX: 658, targetY: 660 },
+      { x: 468, y: 624, w: 12, h: 60, dir: 'right', targetRoom: 'boss', targetX: 67, targetY: 660 },
+    ],
+    ground: [{ x: 0, w: 7.5 }],
+    platforms: [], movingPlatforms: [],
+    enemies: [], collectibles: [], benches: [],
+    npcs: [{
+      x: 240, y: 660, name: 'K', npcKey: 'sanctum_K', hairColor: 0x7FE0DE,
+      dialogues: [
+        "You've walked through the darkness. Through the fragments of a world that forgot itself.",
+        "She's waiting. But before you go to her... I need to know.",
+        { type: 'choice', question: "Do you still remember who you are?",
+          options: [
+            { text: 'Asahina Mafuyu',
+              reward: { type: 'hp_up', value: 10 },
+              nextDialogue: [
+                "I see... That name still holds meaning for you.",
+                "Then take this. You'll need it for what lies ahead.",
+                'Go. End this.',
+              ],
+            },
+            { text: "I... don't know",
+              nextDialogue: [
+                '...I see.',
+                "Perhaps that's more honest than clinging to a name.",
+                'Go anyway. Maybe you will remember at the end.',
+              ],
+            },
+          ],
+        },
+      ],
+    }],
+    abilityItems: [], abilityGates: [], oneWayDoors: [], destructibleWalls: [],
+    bossTrigger: false,
+    bgmOverride: 'bgm_credits',
+    decorations: {
+      ambientLights: [
+        { x: 120, y: 600, color: 0x7FE0DE, alpha: 0.25 },
+        { x: 360, y: 600, color: 0x7FE0DE, alpha: 0.25 },
+      ],
+      crystals: [
+        { x: 80, y: 640 },
+        { x: 400, y: 640 },
+      ],
+    },
+    mapGrid: { x: 4, y: 0 },
+  },
+
   // ── PRE-BOSS (player has dash + sword) ──
-  // 8 platforms, Δ3 rows (48px) steps. Entry at mid-left (from shaft), path to right+boss.
+  // 8 platforms, Δ3 rows (48px) steps. Entry at mid-left (from shaft), path to right→descent.
   // Collectibles: hp_up (816,360), health (240,600), health (840,432).
-  // Bench at x=240. Ability gates: doubleJump (x=0), shadowCloak (x=840).
+  // Ability gates: doubleJump (x=0), shadowCloak (x=840).
   preboss: {
     id: 'preboss', name: 'PRE-BOSS', width: 960, height: 720,
     groundTexture: 'ground_preboss',
     tint: { color: 0x1a0a0a, alpha: 0.25 },
     exits: [
       { x: 0, y: 384, w: 12, h: 160, dir: 'left', targetRoom: 'shaft', targetX: 658, targetY: 420 },
-      { x: 946, y: 624, w: 12, h: 60, dir: 'right', targetRoom: 'boss', targetX: 67, targetY: 660 },
+      { x: 946, y: 624, w: 12, h: 60, dir: 'right', targetRoom: 'descent', targetX: 48, targetY: 660 },
     ],
     ground: [{ x: 0, w: 15 }],
     platforms: [
@@ -437,7 +538,7 @@ const ROOMS = {
     groundTexture: 'ground_boss',
     tint: { color: 0x0a0018, alpha: 0.25 },
     exits: [
-      { x: 0, y: 624, w: 12, h: 60, dir: 'left', targetRoom: 'preboss', targetX: 893, targetY: 660 },
+      { x: 0, y: 624, w: 12, h: 60, dir: 'left', targetRoom: 'sanctum', targetX: 400, targetY: 660 },
     ],
     ground: [{ x: 0, w: 15 }],
     platforms: [
@@ -649,6 +750,7 @@ function generateTMJ(room) {
       properties: [
         { name: 'spawnType', type: 'string', value: 'npc' },
         { name: 'npcName', type: 'string', value: n.name },
+        { name: 'npcKey', type: 'string', value: n.npcKey || n.name },
         { name: 'hairColor', type: 'int', value: n.hairColor },
         { name: 'dialogues', type: 'string', value: JSON.stringify(n.dialogues) },
       ],
@@ -821,7 +923,7 @@ function generateTMJ(room) {
 // ── Main ──
 if (!fs.existsSync(MAPS_DIR)) fs.mkdirSync(MAPS_DIR, { recursive: true });
 
-const ROOM_ORDER = ['intro', 'ascent', 'secret', 'void', 'lower', 'mid', 'shaft', 'preboss', 'boss'];
+const ROOM_ORDER = ['intro', 'ascent', 'secret', 'void', 'lower', 'mid', 'shaft', 'preboss', 'descent', 'sanctum', 'boss'];
 
 for (const id of ROOM_ORDER) {
   const room = ROOMS[id];

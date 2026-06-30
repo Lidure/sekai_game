@@ -1080,7 +1080,7 @@ class Player {
      */
     loadState(data) {
         if (data.maxHp !== undefined) {
-            this.maxHp = Phaser.Math.Clamp(data.maxHp, 1, 9);
+            this.maxHp = Phaser.Math.Clamp(data.maxHp, 1, 99);
         }
         if (data.hp !== undefined) {
             this.hp = Math.min(data.hp, this.maxHp);

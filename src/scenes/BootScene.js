@@ -65,6 +65,8 @@
         this.load.tilemapTiledJSON('room_preboss',  'assets/maps/preboss.tmj');
         this.load.tilemapTiledJSON('room_boss',     'assets/maps/boss.tmj');
         this.load.tilemapTiledJSON('room_void',     'assets/maps/void.tmj');
+        this.load.tilemapTiledJSON('room_descent',  'assets/maps/descent.tmj');
+        this.load.tilemapTiledJSON('room_sanctum',  'assets/maps/sanctum.tmj');
 
         // 鈹€鈹€ Cave parallax backgrounds (replaces programmatic bg_far/bg_mid/bg_near) 鈹€鈹€
         this.load.image('bg_far',  'assets/images/backgrounds/cave_bg_far.png');

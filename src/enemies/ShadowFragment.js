@@ -56,7 +56,7 @@ class ShadowFragment extends Enemy {
             this.sprite.setAlpha(1);
         } else {
             this.ambushSpeed = 180; // 2x charge speed
-            this.pounceSpeed = 200;
+            this.pounceSpeed = 180;
             this.state = 'ambush';
             this.sprite.setAlpha(0.3);
         }
@@ -250,7 +250,7 @@ class ShadowFragment extends Enemy {
             /* ───── AMBUSH ───── */
             case 'ambush':
                 this.body.setVelocity(0, 0);
-                if (absDist < 60) {
+                if (absDist < 68) {
                     // Close range → Quick Pounce (new HK-style fast attack)
                     this.state = 'pounce_telegraph';
                     this._pounceTelegraphTimer = 150; // 0.15s

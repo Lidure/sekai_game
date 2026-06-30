@@ -7648,6 +7648,11 @@
               "value": "???"
             },
             {
+              "name": "npcKey",
+              "type": "string",
+              "value": "???"
+            },
+            {
               "name": "hairColor",
               "type": "int",
               "value": 4868714

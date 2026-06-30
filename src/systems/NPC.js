@@ -35,6 +35,9 @@ class NPC {
         this.typewriterTimer = 0;
         this.typewriterPos = 0;
         this.currentLine = '';
+        this._npcKey = config.npcKey || config.name || 'unknown_npc';
+        this._choiceData = null;
+        this._selectedChoice = 0;
 
         this._moveState = 'rest';
         this._moveTimer = Phaser.Math.FloatBetween(0.3, 1.2);
@@ -111,9 +114,10 @@ class NPC {
     /* ================================================================== */
 
     _createPrompt() {
+        const talkHint = ControlMode.isMobile() ? Lang.t('npcTalkMobile') : Lang.t('npcTalk');
         this.prompt = this.scene.add.text(
             this.x, this.y - 104,
-            this.name + '  ' + Lang.t('npcTalk'),
+            this.name + '  ' + talkHint,
             {
                 fontSize: '11px',
                 fontFamily: 'monospace',
@@ -124,6 +128,8 @@ class NPC {
 
     showPrompt(visible) {
         if (visible && this.prompt.alpha < 0.01) {
+            const chatHint = ControlMode.isMobile() ? Lang.t('npcTalkMobile') : Lang.t('npcTalk');
+            this.prompt.setText(this.name + '  ' + chatHint);
             this.prompt.setAlpha(1);
             this.scene.tweens.add({
                 targets: this.prompt,
@@ -180,7 +186,19 @@ class NPC {
             this._closeDialogue();
             return true;
         }
-        this._startTyping(this.dialogues[this.dialogueIndex]);
+
+        const next = this.dialogues[this.dialogueIndex];
+        if (typeof next === 'object' && next.type === 'choice') {
+            if (this.scene.claimedNpcRewards && this.scene.claimedNpcRewards.includes(this._npcKey)) {
+                this.dialogues[this.dialogueIndex] = "...You already have my help. Go.";
+                this._startTyping(this.dialogues[this.dialogueIndex]);
+                return false;
+            }
+            this._enterChoiceMode(next);
+            return false;
+        }
+
+        this._startTyping(next);
         return false;
     }
 
@@ -225,7 +243,56 @@ class NPC {
         this._moveState = 'rest';
         this._moveTimer = Phaser.Math.FloatBetween(0.6, 1.4);
         this._setPose('stand');
+        this._choiceData = null;
+        this._selectedChoice = 0;
         this._pushDialogueToHud(false);
+    }
+
+    _enterChoiceMode(choiceData) {
+        this._choiceData = choiceData;
+        this._selectedChoice = 0;
+        this.isTyping = false;
+        this.currentLine = choiceData.question || '';
+        this._pushDialogueToHud(true);
+    }
+
+    navigateChoice(dir) {
+        if (!this._choiceData || !this._choiceData.options) return;
+        const len = this._choiceData.options.length;
+        this._selectedChoice = (this._selectedChoice + dir + len) % len;
+        this._pushDialogueToHud(true);
+    }
+
+    confirmChoice() {
+        if (!this._choiceData || !this._choiceData.options) return false;
+        const chosen = this._choiceData.options[this._selectedChoice];
+        if (!chosen) return false;
+
+        // Give reward if present
+        if (chosen.reward) {
+            this.scene._giveNpcReward(chosen.reward);
+        }
+
+        // Replace remaining dialogues with the chosen branch only
+        const nextLines = chosen.nextDialogue || [];
+        this._choiceData = null;
+        this._selectedChoice = 0;
+        this.dialogueIndex = -1;
+
+        if (nextLines.length > 0) {
+            this.dialogues = nextLines;
+            this.dialogueIndex = 0;
+            this._startTyping(this.dialogues[0]);
+        } else {
+            this._closeDialogue();
+            return true;
+        }
+
+        // Track claimed reward to prevent farming
+        if (chosen.reward && this.scene.claimedNpcRewards) {
+            this.scene.claimedNpcRewards.push(this._npcKey);
+        }
+        return false;
     }
 
     reset() {
@@ -333,9 +400,18 @@ class NPC {
 
         const indicator = this.isTyping
             ? '\u25BC'
-            : (this.dialogueIndex >= this.dialogues.length - 1 ? Lang.t('npcClose') : '\u25BC');
+            : (this.dialogueIndex >= this.dialogues.length - 1
+                ? (ControlMode.isMobile() ? Lang.t('npcCloseMobile') : Lang.t('npcClose'))
+                : '\u25BC');
 
         hud.showNpcDialogue(this.name, this.currentLine.substring(0, this.typewriterPos), indicator);
+
+        // Pass choice data if in choice mode
+        if (this._choiceData && this._choiceData.options) {
+            hud.showNpcChoice(this._choiceData.options, this._selectedChoice);
+        } else {
+            hud.hideNpcChoice();
+        }
     }
 
     /* ================================================================== */

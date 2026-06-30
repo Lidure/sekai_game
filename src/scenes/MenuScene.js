@@ -311,8 +311,12 @@ class MenuScene extends Phaser.Scene {
     /*  Hint text                                                          */
     /* ------------------------------------------------------------------ */
 
+    _getStartHint() {
+        return ControlMode.isMobile() ? Lang.t('tapToStart') : Lang.t('pressJToStart');
+    }
+
     _buildHint() {
-        this.hintText = this.add.text(this.scale.width / 2, this.scale.height - 60, Lang.t('pressJToStart'), {
+        this.hintText = this.add.text(this.scale.width / 2, this.scale.height - 60, this._getStartHint(), {
             fontSize: '14px',
             fontFamily: 'monospace',
             color: '#4a6a9f',
@@ -343,7 +347,7 @@ class MenuScene extends Phaser.Scene {
             }
         });
         if (this.hintText) {
-            this.hintText.setText(this.settingsOpen ? Lang.t('helpMenuSettings') : Lang.t('pressJToStart'));
+            this.hintText.setText(this.settingsOpen ? Lang.t('helpMenuSettings') : this._getStartHint());
         }
         if (this.settingsTitle) this.settingsTitle.setText(Lang.t('settings'));
         if (this.settingsHelp) this.settingsHelp.setText(Lang.t('helpMenuSettings'));
@@ -438,7 +442,7 @@ class MenuScene extends Phaser.Scene {
         if (this.settingsOverlay) {
             this.settingsOverlay.setVisible(false);
         }
-        if (this.hintText) this.hintText.setText(Lang.t('pressJToStart'));
+        if (this.hintText) this.hintText.setText(this._getStartHint());
         this._updateSelection();
     }
 

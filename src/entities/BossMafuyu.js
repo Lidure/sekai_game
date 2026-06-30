@@ -15,7 +15,7 @@ class BossMafuyu {
         this.phase = 1;
         this.state = 'idle';
         this.aiTimer = 0;
-        this.aiCooldowns = { A: 0, B: 0, C: 0, D: 0 };
+        this.aiCooldowns = { A: 0, B: 0, C: 0, D: 0, H: 0 };
         this.stateTimer = 0;
         this.facingRight = false;
         this.vulnerable = true;
@@ -31,6 +31,10 @@ class BossMafuyu {
         this.desperate = false;
         this.transitioning = false;
         this.defeated = false;
+        this.cowerMode = null;
+        this._cowerHealElapsed = 0;
+        this._phaseTransitionMotes = [];
+        this._phaseTransitionHpTween = null;
 
         this.yBobTween = scene.tweens.add({
             targets: this.sprite,
@@ -81,8 +85,10 @@ class BossMafuyu {
         // Audio — metal clang on boss hit
         this.scene.sound.play('sfx_boss_hit', { volume: 0.6, detune: Phaser.Math.Between(-80, 80) });
 
-        if (this.hp <= this.maxHp / 2 && this.phase === 1) {
+        this.hp = Math.max(0, this.hp);
+        if (this.phase === 1 && this.hp <= 0) {
             this._startPhaseTransition();
+            return;
         }
         if (this.hp <= 100 && this.phase === 2) {
             this.desperate = true;
@@ -95,55 +101,193 @@ class BossMafuyu {
     _startPhaseTransition() {
         if (this.transitioning) return;
         this.transitioning = true;
-        if (this.yBobTween) this.yBobTween.stop();
+        this.cowerMode = 'transition';
+        this._cowerHealElapsed = 0;
         this.vulnerable = false;
-        this.state = 'phase_transition';
+        if (this.yBobTween) this.yBobTween.stop();
+        this.state = 'cower';
         this.body.setVelocity(0, 0);
-        this.sprite.setTexture('boss_liberation');
+        this.body.setAllowGravity(false);
+        this.sprite.setTexture('boss_cower');
+        this._disableMeleeHitbox();
+        this._clearTransitionMotes();
+        this._spawnTransitionMotes(14, 0x101018, 0.95);
 
-        // Simple camera flash only
-        this.scene.cameras.main.flash(300, 255, 255, 255);
+        this.scene.cameras.main.flash(180, 20, 20, 30);
+        this.scene.cameras.main.shake(120, 0.006);
 
-        // Audio — fade out Phase 1 BGM, fade in Phase 2 BGM
+        this._fadeToPhase2Bgm(720);
+
+        this.scene.time.delayedCall(720, () => {
+            if (!this.scene || this.defeated) return;
+            this._beginPhaseTwoRefill();
+        });
+    }
+
+    _fadeToPhase2Bgm(delayMs = 0) {
         const scene = this.scene;
         if (scene.bgmPhase1) {
             scene.tweens.add({
                 targets: scene.bgmPhase1,
                 volume: 0,
-                duration: 1500,
-                onComplete: () => { scene.bgmPhase1.stop(); scene.bgmPhase1.destroy(); scene.bgmPhase1 = null; },
+                duration: 1200,
+                delay: delayMs,
+                onComplete: () => {
+                    if (scene.bgmPhase1) {
+                        scene.bgmPhase1.stop();
+                        scene.bgmPhase1.destroy();
+                        scene.bgmPhase1 = null;
+                    }
+                },
             });
         }
-        scene.time.delayedCall(800, () => {
-            if (!scene.bgmPhase2) {
-                scene.bgmPhase2 = AudioSettings.createBgm(scene, 'bgm_boss_p2', 0.45);
-                scene.bgmPhase2.play();
-                scene.tweens.add({
-                    targets: scene.bgmPhase2,
-                    volume: AudioSettings.scale('bgm', 0.45),
-                    duration: 1500,
-                });
-            }
+        scene.time.delayedCall(delayMs + 120, () => {
+            if (scene.bgmPhase2 || this.defeated) return;
+            scene.bgmPhase2 = AudioSettings.createBgm(scene, 'bgm_boss_p2', 0.45);
+            scene.bgmPhase2.play();
+            scene.tweens.add({
+                targets: scene.bgmPhase2,
+                volume: AudioSettings.scale('bgm', 0.45),
+                duration: 1300,
+            });
         });
+    }
 
-        this.scene.time.delayedCall(500, () => {
-            // Use velocity to fly upward instead of tweening sprite position
-            this.body.setVelocityY(-180);  // Fly up
-            this.scene.time.delayedCall(1000, () => {
-                this.body.setVelocityY(0);
-                this.phase = 2;
+    _beginPhaseTwoRefill() {
+        if (this.defeated) return;
+        this.phase = 2;
+        this.state = 'phase_transition';
+        this.sprite.setTexture('boss_liberation');
+        this.body.setVelocity(0, 0);
+        this.body.setAllowGravity(false);
+        this.scene.cameras.main.flash(140, 255, 255, 255);
+        this.scene.cameras.main.shake(180, 0.01);
+
+        this._clearTransitionMotes();
+        this._spawnTransitionMotes(18, 0x050508, 1.2);
+
+        if (this._phaseTransitionHpTween) {
+            this._phaseTransitionHpTween.stop();
+            this._phaseTransitionHpTween = null;
+        }
+
+        const hpState = { value: 0 };
+        this.hp = 0;
+        this._phaseTransitionHpTween = this.scene.tweens.add({
+            targets: hpState,
+            value: this.maxHp,
+            duration: 760,
+            ease: 'Sine.easeOut',
+            onUpdate: () => {
+                this.hp = Math.min(this.maxHp, Math.round(hpState.value));
+            },
+            onComplete: () => {
+                this._phaseTransitionHpTween = null;
+                this._clearTransitionMotes();
                 this.desperate = false;
                 this.transitioning = false;
                 this.vulnerable = true;
+                this.cowerMode = null;
+                this._cowerHealElapsed = 0;
                 this.state = 'idle';
+                this.body.setAllowGravity(true);
+                this.body.setVelocity(0, 0);
                 this.sprite.setTexture('boss_liberation');
-            });
+                this._disableMeleeHitbox();
+                this.yBobTween = this.scene.tweens.add({
+                    targets: this.sprite,
+                    y: this.sprite.y + 12,
+                    duration: 2000,
+                    yoyo: true,
+                    repeat: -1,
+                    ease: 'Sine.easeInOut',
+                });
+            },
         });
+    }
+
+    _clearTransitionMotes() {
+        if (!this._phaseTransitionMotes) this._phaseTransitionMotes = [];
+        for (const mote of this._phaseTransitionMotes) {
+            if (mote && mote.active) mote.destroy();
+        }
+        this._phaseTransitionMotes = [];
+    }
+
+    _spawnTransitionMotes(count, color, alpha) {
+        this._clearTransitionMotes();
+        const scene = this.scene;
+        const baseX = this.sprite.x;
+        const baseY = this.sprite.y - 6;
+        for (let i = 0; i < count; i++) {
+            const startX = baseX + Phaser.Math.Between(-24, 24);
+            const startY = baseY + Phaser.Math.Between(-28, 16);
+            const mote = scene.add.circle(startX, startY, Phaser.Math.Between(2, 4), color, alpha).setDepth(22);
+            const driftX = startX + Phaser.Math.Between(-36, 36);
+            const driftY = startY + Phaser.Math.Between(-34, -8);
+            scene.tweens.add({
+                targets: mote,
+                x: driftX,
+                y: driftY,
+                alpha: alpha * 0.55,
+                duration: Phaser.Math.Between(520, 900),
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut',
+            });
+            this._phaseTransitionMotes.push(mote);
+        }
+    }
+
+    _updateCowerState(dt) {
+        if (this.cowerMode === 'transition' || this.defeated) return;
+        if (this.cowerMode !== 'heal') return;
+
+        this.vulnerable = false;
+        this.body.setVelocity(0, 0);
+        this.body.setAllowGravity(false);
+
+        const healCap = Math.max(1, Math.floor(this.maxHp * 0.55));
+        const healInterval = 0.14;
+        this._cowerHealElapsed += dt;
+
+        while (this._cowerHealElapsed >= healInterval) {
+            this._cowerHealElapsed -= healInterval;
+            if (this.hp >= healCap) break;
+
+            this.hp = Math.min(healCap, this.hp + 2);
+
+            const scene = this.scene;
+            const mote = scene.add.circle(
+                this.sprite.x + Phaser.Math.Between(-18, 18),
+                this.sprite.y + Phaser.Math.Between(-18, 10),
+                Phaser.Math.Between(1, 3),
+                0x08080c,
+                0.85,
+            ).setDepth(22);
+            scene.tweens.add({
+                targets: mote,
+                y: mote.y - Phaser.Math.Between(10, 22),
+                x: mote.x + Phaser.Math.Between(-6, 6),
+                alpha: 0,
+                scale: 0.35,
+                duration: Phaser.Math.Between(360, 520),
+                ease: 'Sine.easeOut',
+                onComplete: () => mote.destroy(),
+            });
+        }
+
+        this.sprite.clearTint();
     }
 
     _die() {
         this.defeated = true;
         this.vulnerable = false;
+        if (this._phaseTransitionHpTween) {
+            this._phaseTransitionHpTween.stop();
+            this._phaseTransitionHpTween = null;
+        }
+        this._clearTransitionMotes();
         this.state = 'dead';
         this.body.setVelocity(0, 0);
         this.body.setAllowGravity(false);
@@ -253,6 +397,13 @@ class BossMafuyu {
                 this.sprite.setTexture('boss_cower');
                 this.body.setVelocityX(0);
                 this.stateTimer -= dt;
+                if (this.stateTimer <= 0) this._enterBossState('idle');
+                break;
+            case 'cower':
+                this.sprite.setTexture('boss_cower');
+                this.body.setVelocityX(0);
+                this.stateTimer -= dt;
+                this._updateCowerState(dt);
                 if (this.stateTimer <= 0) this._enterBossState('idle');
                 break;
             case 'stun':
@@ -385,6 +536,13 @@ class BossMafuyu {
                 this.stateTimer -= dt;
                 if (this.stateTimer <= 0) this._enterBossState('idle');
                 break;
+            case 'cower':
+                this.sprite.setTexture('boss_cower');
+                this.body.setVelocity(0, 0);
+                this._updateCowerState(dt);
+                this.stateTimer -= dt;
+                if (this.stateTimer <= 0) this._enterBossState('idle');
+                break;
         }
     }
 
@@ -394,7 +552,9 @@ class BossMafuyu {
 
     _evaluatePhase1AI(dist, player) {
         this.aiTimer = 1.5;
-        if (this.aiCooldowns.A <= 0 && dist > 80 && Math.random() < 0.6) {
+        if (this.hp <= this.maxHp * 0.35 && this.aiCooldowns.H <= 0 && Math.random() < 0.55) {
+            this._enterBossState('cower');
+        } else if (this.aiCooldowns.A <= 0 && dist > 80 && Math.random() < 0.6) {
             this._enterBossState('melee_telegraph');
         } else if (this.aiCooldowns.B <= 0 && dist < 80 && Math.random() < 0.3) {
             this._enterBossState('dash_telegraph');
@@ -419,6 +579,7 @@ class BossMafuyu {
             case 'dash_active': return 0.8;
             case 'dash_recovery': return 0.6;
             case 'stun': return 0.4;
+            case 'cower': return this.phase === 1 ? 1.2 : 0.9;
             case 'liberation_telegraph': return this.desperate ? 1.0 : 1.5;
             case 'liberation_active': return 1.5;
             case 'liberation_recovery': return 1.0;
@@ -427,7 +588,28 @@ class BossMafuyu {
     }
 
     _onBossStateEnter(state) {
+        if (state !== 'cower') {
+            this.vulnerable = true;
+            this.body.setAllowGravity(true);
+            this.cowerMode = null;
+            this._cowerHealElapsed = 0;
+            this.sprite.clearTint();
+        }
+
         switch (state) {
+            case 'cower':
+                this.vulnerable = false;
+                this.body.setVelocity(0, 0);
+                this.body.setAllowGravity(false);
+                this._disableMeleeHitbox();
+                this._cowerHealElapsed = 0;
+                if (this.transitioning) {
+                    this.cowerMode = 'transition';
+                } else {
+                    this.cowerMode = 'heal';
+                    this.aiCooldowns.H = 4.5;
+                }
+                break;
             case 'melee_telegraph':
                 this.aiCooldowns.A = 2.5;
                 this.scene.sound.play('sfx_boss_roar', { volume: 0.55, rate: this.phase === 2 ? 1.15 : 1.0 });
@@ -474,13 +656,21 @@ class BossMafuyu {
         this.transitioning = false;
         this.vulnerable = true;
         this.desperate = false;
+        this.cowerMode = null;
+        this._cowerHealElapsed = 0;
         this.dashCount = 0;
         this.invulnTimer = 0;
         this.aiTimer = 0;
         for (const k in this.aiCooldowns) this.aiCooldowns[k] = 0;
+        if (this._phaseTransitionHpTween) {
+            this._phaseTransitionHpTween.stop();
+            this._phaseTransitionHpTween = null;
+        }
+        this._clearTransitionMotes();
         this.sprite.setPosition(x, y);
         this.sprite.setAlpha(1);
         this.sprite.clearTint();
+        this.body.enable = true;
         this.sprite.body.setAllowGravity(true);
         this.body.setVelocity(0, 0);
         this.sprite.setTexture('boss_idle');

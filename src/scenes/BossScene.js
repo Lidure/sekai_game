@@ -31,6 +31,9 @@ class BossScene extends Phaser.Scene {
 
         this.bossDefeated = false;
         this.playerDied = false;
+        this._introLockFrames = 48;
+        this._introFinished = false;
+        this._introOverlay = null;
 
         // Pause menu (ESC to toggle)
         this.pauseMenu = new PauseMenu(this);
@@ -47,9 +50,63 @@ class BossScene extends Phaser.Scene {
 
         // Fade in on entry
         this.cameras.main.fadeIn(500);
+        this._playBossIntro();
 
         this.events.once('shutdown', () => {
             this._stopBossBgm();
+        });
+    }
+
+    _playBossIntro() {
+        this.physics.world.isPaused = true;
+        this.player.sprite.setVelocity(0, 0);
+        this.boss.sprite.setVelocity(0, 0);
+        this.cameras.main.flash(220, 255, 255, 255);
+        this.cameras.main.shake(220, 0.01);
+
+        const overlay = this.add.container(this.arenaW / 2, 128).setDepth(220).setAlpha(0);
+        const plate = this.add.graphics();
+        plate.fillStyle(0x05070d, 0.9);
+        plate.fillRoundedRect(-170, -28, 340, 112, 10);
+        plate.lineStyle(1, 0x7FE0DE, 0.4);
+        plate.strokeRoundedRect(-170, -28, 340, 112, 10);
+        plate.lineStyle(1, 0x000000, 1);
+        plate.strokeRoundedRect(-166, -24, 332, 104, 8);
+        overlay.add(plate);
+
+        const title = this.add.text(0, 2, 'BOSS ENCOUNTER', {
+            fontSize: '20px',
+            fontFamily: 'monospace',
+            color: '#7FE0DE',
+        }).setOrigin(0.5);
+        const name = this.add.text(0, 28, 'MAFUYU', {
+            fontSize: '34px',
+            fontFamily: 'monospace',
+            color: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 4,
+        }).setOrigin(0.5);
+        const hint = this.add.text(0, 62, 'ENTER THE AREA', {
+            fontSize: '13px',
+            fontFamily: 'monospace',
+            color: '#a8d8ff',
+        }).setOrigin(0.5);
+        overlay.add([title, name, hint]);
+        this._introOverlay = overlay;
+
+        this.tweens.add({
+            targets: overlay,
+            alpha: 1,
+            duration: 180,
+            ease: 'Sine.easeOut',
+        });
+        this.tweens.add({
+            targets: [title, name, hint],
+            y: '+=4',
+            duration: 400,
+            ease: 'Sine.easeOut',
+            yoyo: true,
+            repeat: -1,
         });
     }
 
@@ -119,6 +176,12 @@ class BossScene extends Phaser.Scene {
             this.player.sprite,
             this.boss.sprite,
             () => this._onBossTouchPlayer(),
+        );
+
+        this.physics.add.overlap(
+            this.boss.bulletGroup,
+            this.player.sprite,
+            (bullet, _player) => this._onPlayerHitByBullet(bullet),
         );
     }
 
@@ -249,10 +312,45 @@ class BossScene extends Phaser.Scene {
         this.player.takeDamage(1, 60, -30);
     }
 
+    _onPlayerHitByBullet(bullet) {
+        if (!bullet || !bullet.active) return;
+        if (!this.boss || this.boss.defeated) return;
+        const glow = bullet.getData('glow');
+        if (glow && glow.active) glow.destroy();
+        bullet.destroy();
+        if (this.player.dead) return;
+        const dmg = bullet.getData('type') === 'homing' ? 2 : 1;
+        this.player.takeDamage(dmg, 60, -30);
+    }
+
     update(time, delta) {
         // Pause menu always runs (ESC to toggle)
         this.pauseMenu.update();
         if (this.pauseMenu.isPaused) return;
+
+        if (this._introLockFrames > 0) {
+            this._introLockFrames--;
+            if (this._introLockFrames <= 0) {
+                this.physics.world.isPaused = false;
+                this._introFinished = true;
+                if (this._introOverlay) {
+                    this.tweens.add({
+                        targets: this._introOverlay,
+                        alpha: 0,
+                        duration: 260,
+                        ease: 'Sine.easeIn',
+                        onComplete: () => {
+                            if (this._introOverlay && this._introOverlay.active) {
+                                this._introOverlay.destroy(true);
+                            }
+                            this._introOverlay = null;
+                        },
+                    });
+                }
+            }
+            this.hud.showBossBar('Mafuyu', this.boss.hp, this.boss.maxHp);
+            return;
+        }
 
         this._updateCameraLook(delta);
         if (this.bossDefeated || this.playerDied) return;
@@ -305,7 +403,7 @@ class BossScene extends Phaser.Scene {
 
     _updateArenaBg() {
         if (this.boss && this.boss.phase === 2) {
-            const progress = Math.max(0, 1 - this.boss.hp / (this.boss.maxHp / 2));
+            const progress = Phaser.Math.Clamp(1 - (this.boss.hp / this.boss.maxHp), 0, 1);
             const tint = Phaser.Display.Color.Interpolate.ColorWithColor(
                 { r: 10, g: 10, b: 26 },
                 { r: 20, g: 5, b: 40 },
@@ -347,24 +445,67 @@ class BossScene extends Phaser.Scene {
         if (this.bgmPhase1) { this.bgmPhase1.stop(); this.bgmPhase1.destroy(); this.bgmPhase1 = null; }
         if (this.bgmPhase2) { this.bgmPhase2.stop(); this.bgmPhase2.destroy(); this.bgmPhase2 = null; }
 
-        const victoryText = this.add.text(this.arenaW / 2, 200, 'MEMORY FRAGMENT\nACQUIRED', {
-            fontSize: '34px',
+        this.cameras.main.flash(260, 255, 255, 255);
+        this.cameras.main.shake(320, 0.018);
+
+        const veil = this.add.rectangle(this.arenaW / 2, this.arenaH / 2, this.arenaW, this.arenaH, 0x000000, 0)
+            .setDepth(190);
+        this.tweens.add({
+            targets: veil,
+            alpha: 0.52,
+            duration: 200,
+            ease: 'Sine.easeOut',
+        });
+
+        const victoryText = this.add.text(this.arenaW / 2, 168, 'MAFUYU FALLS', {
+            fontSize: '30px',
+            fontFamily: 'monospace',
+            color: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 4,
+            align: 'center',
+        }).setOrigin(0.5).setDepth(200).setAlpha(0);
+
+        const subText = this.add.text(this.arenaW / 2, 210, 'MEMORY FRAGMENT ACQUIRED', {
+            fontSize: '16px',
+            fontFamily: 'monospace',
+            color: '#7FE0DE',
+        }).setOrigin(0.5).setDepth(200).setAlpha(0);
+
+        const prompt = this.add.text(this.arenaW / 2, 250, 'RETURNING TO THE OUTER MENU', {
+            fontSize: '13px',
             fontFamily: 'monospace',
             color: '#a8d8ff',
-            align: 'center',
         }).setOrigin(0.5).setDepth(200).setAlpha(0);
 
         this.tweens.add({
             targets: victoryText,
             alpha: 1,
-            y: 180,
-            duration: 1500,
-            ease: 'Power2',
+            y: 154,
+            duration: 700,
+            ease: 'Back.easeOut',
+        });
+        this.tweens.add({
+            targets: subText,
+            alpha: 1,
+            y: 200,
+            duration: 850,
+            ease: 'Sine.easeOut',
+            delay: 180,
+        });
+        this.tweens.add({
+            targets: prompt,
+            alpha: { from: 0, to: 1 },
+            duration: 900,
+            yoyo: true,
+            repeat: 2,
+            ease: 'Sine.easeInOut',
+            delay: 420,
         });
 
         this.time.delayedCall(3000, () => {
-            this.cameras.main.fadeOut(1500, 255, 255, 255);
-            this.time.delayedCall(1600, () => {
+            this.cameras.main.fadeOut(1000, 0, 0, 0);
+            this.time.delayedCall(1100, () => {
                 SceneManager.finishOverlay(this, { victory: true });
             });
         });

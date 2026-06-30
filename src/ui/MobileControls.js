@@ -35,6 +35,10 @@ class MobileControls {
         this.right = false;
         this.up = false;
         this.down = false;
+        this.upJustDown = false;
+        this.downJustDown = false;
+        this._prevUp = false;
+        this._prevDown = false;
 
         // ── Action buttons ──
         this.jump = false;
@@ -50,6 +54,7 @@ class MobileControls {
 
         this._buildJoystick();
         this._buildActionButtons();
+        this._buildUtilityButtons();
         this.setVisible(false);
     }
 
@@ -130,6 +135,11 @@ class MobileControls {
         this.right = nx > 0.3;
         this.up = ny < -0.3;
         this.down = ny > 0.3;
+
+        this.upJustDown = this.up && !this._prevUp;
+        this.downJustDown = this.down && !this._prevDown;
+        this._prevUp = this.up;
+        this._prevDown = this.down;
     }
 
     _resetJoystick() {
@@ -138,6 +148,10 @@ class MobileControls {
         this.right = false;
         this.up = false;
         this.down = false;
+        this.upJustDown = false;
+        this.downJustDown = false;
+        this._prevUp = false;
+        this._prevDown = false;
     }
 
     _drawJoystickRing() {
@@ -242,6 +256,84 @@ class MobileControls {
     }
 
     /* ================================================================ */
+    /*  Utility buttons (map + pause)                                      */
+    /* ================================================================ */
+
+    _utilityBtn(x, y, r, icon, label) {
+        const g = this.scene.add.graphics().setScrollFactor(0).setDepth(150);
+        const txt = this.scene.add.text(x, y, icon, {
+            fontSize: `${Math.round(r * 0.85)}px`,
+            fontFamily: 'monospace',
+            color: '#7FE0DE',
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(151);
+
+        const lbl = this.scene.add.text(x, y + r + 10, label, {
+            fontSize: '9px',
+            fontFamily: 'monospace',
+            color: '#5a7a8a',
+        }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(151);
+
+        const zone = this.scene.add.zone(x, y, r * 3.2, r * 3.2)
+            .setScrollFactor(0).setDepth(152).setInteractive();
+
+        this._objs.push(g, txt, lbl, zone);
+
+        const draw = (pressed) => {
+            g.clear();
+            if (pressed) {
+                g.fillStyle(0x2EC4B6, 0.20);
+                g.fillCircle(x, y, r + 4);
+                g.fillStyle(0x1a3a4a, 0.9);
+                g.fillCircle(x, y, r);
+                g.lineStyle(2, 0x7FE0DE, 0.9);
+                g.strokeCircle(x, y, r);
+                txt.setColor('#ffffff');
+                txt.setScale(0.92);
+                lbl.setAlpha(1);
+                lbl.setColor('#8aa8ba');
+            } else {
+                g.fillStyle(0x2EC4B6, 0.08);
+                g.fillCircle(x, y, r + 4);
+                g.fillStyle(0x0f1a2a, 0.65);
+                g.fillCircle(x, y, r);
+                g.lineStyle(1.5, 0x2EC4B6, 0.45);
+                g.strokeCircle(x, y, r);
+                txt.setColor('#7FE0DE');
+                txt.setScale(1);
+                lbl.setAlpha(0.7);
+                lbl.setColor('#5a7a8a');
+            }
+        };
+        draw(false);
+        zone.on('pointerdown', () => draw(true));
+        zone.on('pointerup', () => draw(false));
+        zone.on('pointerout', () => draw(false));
+        return { zone };
+    }
+
+    _buildUtilityButtons() {
+        const w = this.scene.scale.width;
+
+        // ── Map button (top-left) ──
+        const btnMap = this._utilityBtn(55, 52, 22, '\u25C8', 'MAP');
+        btnMap.zone.on('pointerdown', () => {
+            if (!this.active) return;
+            const hud = this.scene;
+            const gameScene = this.scene.scene.get('GameScene');
+            if (gameScene && gameScene.pauseMenu && gameScene.pauseMenu.isPaused) return;
+            if (hud && hud.mapView) hud.mapView.toggle();
+        });
+
+        // ── Pause button (top-right) ──
+        const btnPause = this._utilityBtn(w - 55, 52, 22, '\u23F8', 'PAUSE');
+        btnPause.zone.on('pointerdown', () => {
+            if (!this.active) return;
+            const gameScene = this.scene.scene.get('GameScene');
+            if (gameScene && gameScene.pauseMenu) gameScene.pauseMenu.toggle();
+        });
+    }
+
+    /* ================================================================ */
     /*  Lifecycle                                                         */
     /* ================================================================ */
 
@@ -249,9 +341,13 @@ class MobileControls {
         this.jumpJustDown = false;
         this.attackJustDown = false;
         this.dashJustDown = false;
+        this.upJustDown = false;
+        this.downJustDown = false;
         this._prevJump = this.jump;
         this._prevAttack = this.attack;
         this._prevDash = this.dash;
+        this._prevUp = this.up;
+        this._prevDown = this.down;
     }
 
     refreshJustDown() {

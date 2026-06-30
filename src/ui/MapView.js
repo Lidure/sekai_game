@@ -440,6 +440,7 @@ class MapView {
             intro: 'ground', ascent: 'staircase', secret: 'tower',
             lower: 'staircase', mid: 'complex', shaft: 'tower',
             preboss: 'staircase', boss: 'arena', void: 'ground',
+            descent: 'tower', sanctum: 'arena',
         };
         const profile = ROOM_PROFILES[roomId] || 'ground';
         const ix = pos.x + 4, iy = pos.y + 4;

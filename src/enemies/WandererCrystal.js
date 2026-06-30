@@ -121,10 +121,10 @@ class WandererCrystal extends Enemy {
                 this._laserGraphics = this.scene.add.graphics().setDepth(12);
                 this._laserGraphics.lineStyle(1.5, 0x66ffff, 0.5);
                 this._laserGraphics.beginPath();
-                this._laserGraphics.moveTo(this.x, this.y);
+                this._laserGraphics.moveTo(this.x, this.y + 4);
                 this._laserGraphics.lineTo(
                     this.x + Math.cos(this._aimAngle) * 200,
-                    this.y + Math.sin(this._aimAngle) * 200,
+                    this.y + 4 + Math.sin(this._aimAngle) * 200,
                 );
                 this._laserGraphics.strokePath();
 
@@ -144,15 +144,15 @@ class WandererCrystal extends Enemy {
                 this._laserGraphics = this.scene.add.graphics().setDepth(12);
                 this._laserGraphics.lineStyle(2.5, 0x66ffff, 0.8);
                 this._laserGraphics.beginPath();
-                this._laserGraphics.moveTo(this.x, this.y);
+                this._laserGraphics.moveTo(this.x, this.y + 4);
 
                 const endX = this.x + Math.cos(this._aimAngle) * 300;
-                const endY = this.y + Math.sin(this._aimAngle) * 300;
+                const endY = this.y + 4 + Math.sin(this._aimAngle) * 300;
                 this._laserGraphics.lineTo(endX, endY);
                 this._laserGraphics.strokePath();
 
                 this._laserGraphics.fillStyle(0x66ffff, 0.1);
-                this._laserGraphics.fillCircle(this.x, this.y, 16);
+                this._laserGraphics.fillCircle(this.x, this.y + 4, 16);
 
                 // Damage player every 250ms while in beam path
                 this._laserHitTimer -= dtSec;
@@ -253,7 +253,7 @@ class WandererCrystal extends Enemy {
         ];
 
         for (const dir of directions) {
-            const ring = this.scene.add.circle(this.x, this.y, 20, 0x66ffff, 0.4)
+            const ring = this.scene.add.circle(this.x, this.y + 4, 20, 0x66ffff, 0.4)
                 .setDepth(10);
             this._pulseProjectiles.push(ring);
             this._pulseHitTimers.push(0);

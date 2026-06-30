@@ -224,7 +224,7 @@ class BloatedShadow extends Enemy {
         this.scene.cameras.main.shake(200, 0.02);
 
         // FX sprite at golem's feet
-        const fx = this.scene.add.sprite(this.x, this.y + 24, 'enemy_golem_attackFx')
+        const fx = this.scene.add.sprite(this.x, this.y + 18, 'enemy_golem_attackFx')
             .setScale(1.2)
             .setDepth(15);
         this._gfxToCleanup.push(fx);
@@ -239,7 +239,7 @@ class BloatedShadow extends Enemy {
         for (let i = 0; i < 8; i++) {
             const dust = this.scene.add.circle(
                 this.x + Phaser.Math.Between(-20, 20),
-                this.y + 24,
+                this.y + 18,
                 Phaser.Math.Between(2, 4), 0x88aacc, 0.6,
             ).setDepth(15);
             this._gfxToCleanup.push(dust);
@@ -260,8 +260,8 @@ class BloatedShadow extends Enemy {
         // AOE damage check — tightened from 60px to 48px, damage 1
         if (this.scene.player && !this.scene.player.dead) {
             const dx = this.scene.player.x - this.x;
-            const dy = Math.abs(this.scene.player.y - (this.y + 24));
-            if (Math.abs(dx) < 48 && dy < 32 && this.scene.player.body.blocked.down) {
+            const dy = Math.abs(this.scene.player.y - (this.y + 18));
+            if (Math.abs(dx) < 42 && dy < 28 && this.scene.player.body.blocked.down) {
                 this.scene.player.takeDamage(1, Math.sign(dx) * 60, -20);
             }
         }
@@ -281,7 +281,7 @@ class BloatedShadow extends Enemy {
                 for (let i = 0; i < 3; i++) {
                     const dust = this.scene.add.circle(
                         this.x + Phaser.Math.Between(-15, 15),
-                        this.y + 24,
+                        this.y + 18,
                         Phaser.Math.Between(2, 3), 0x887766, 0.4,
                     ).setDepth(15);
                     this._gfxToCleanup.push(dust);

@@ -110,6 +110,40 @@ class SaveSlotPicker {
             fontSize: '12px', fontFamily: 'monospace', color: '#3a4a6a',
         }).setOrigin(0.5);
         this.container.add(this._helpText);
+
+        // ── Interactive zones for mobile touch support ──
+        this._slotZones = [];
+        for (let i = 0; i < 5; i++) {
+            const y = cardStartY + i * cardGap;
+            const zone = this.scene.add.zone(cx, y, pW - 24, 40)
+                .setInteractive({ useHandCursor: true });
+            this.container.add(zone);
+
+            const idx = i;
+            zone.on('pointerover', () => {
+                if (!this.inputEnabled || this.destroyed) return;
+                this.selectedIndex = idx;
+                this._updateDisplay();
+            });
+            zone.on('pointerup', (pointer) => {
+                if (!this.inputEnabled || this.destroyed || pointer.button !== 0) return;
+                const slot = this.slots[idx];
+                if (this.mode === 'load' && slot.empty) return;
+                this.selectedIndex = idx;
+                this._updateDisplay();
+                this._confirm();
+            });
+            this._slotZones.push(zone);
+        }
+
+        // Cancel zone — tap bottom area of panel (over help text)
+        const cancelZone = this.scene.add.zone(cx, py + pH - 16, pW - 40, 28)
+            .setInteractive({ useHandCursor: true });
+        this.container.add(cancelZone);
+        cancelZone.on('pointerup', (pointer) => {
+            if (!this.inputEnabled || this.destroyed || pointer.button !== 0) return;
+            this._cancel();
+        });
     }
 
     _readSlots() {

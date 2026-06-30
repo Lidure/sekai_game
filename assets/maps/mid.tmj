@@ -7669,6 +7669,11 @@
               "value": "K"
             },
             {
+              "name": "npcKey",
+              "type": "string",
+              "value": "K"
+            },
+            {
               "name": "hairColor",
               "type": "int",
               "value": 3065014
