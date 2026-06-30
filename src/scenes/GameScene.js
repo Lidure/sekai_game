@@ -1662,8 +1662,6 @@ class GameScene extends Phaser.Scene {
                     nearbyNPC.startDialogue();
                     return;
                 }
-
-                this.player.attackPressed();
             }
         };
         this.input.on('pointerdown', this._pointerActionHandler);

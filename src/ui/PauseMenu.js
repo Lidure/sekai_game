@@ -39,7 +39,7 @@ class PauseMenu {
 
         this._fullscreenChangeHandler = () => {
             this._updateSettingsVisuals();
-            this._updateMainLabels();
+            this._refreshLocalizedText();
         };
         document.addEventListener('fullscreenchange', this._fullscreenChangeHandler);
         document.addEventListener('webkitfullscreenchange', this._fullscreenChangeHandler);
@@ -63,20 +63,20 @@ class PauseMenu {
         const H = this.scene.scale.height;
 
         this._mainRect = {
-            pW: 420,
-            pH: 436,
-            px: Math.round((W - 420) / 2),
-            py: Math.round((H - 436) / 2) - 8,
+            pW: 444,
+            pH: 404,
+            px: Math.round((W - 444) / 2),
+            py: Math.round((H - 404) / 2) - 10,
         };
         this._settingsRect = {
-            pW: 388,
-            pH: 406,
-            px: Math.round((W - 388) / 2),
-            py: Math.round((H - 406) / 2) - 4,
+            pW: 404,
+            pH: 390,
+            px: Math.round((W - 404) / 2),
+            py: Math.round((H - 390) / 2) - 6,
         };
 
         const overlay = this.scene.add.graphics();
-        overlay.fillStyle(0x0a0a1a, 0.75);
+        overlay.fillStyle(0x05070d, 0.80);
         overlay.fillRect(0, 0, W, H);
         this.container.add(overlay);
 
@@ -93,15 +93,26 @@ class PauseMenu {
         const cx = px + pW / 2;
 
         const panel = this.scene.add.graphics();
-        panel.fillStyle(0x0a0a1a, 0.96);
-        panel.fillRoundedRect(px, py, pW, pH, 14);
-        panel.lineStyle(4, 0x2EC4B6, 0.12);
-        panel.strokeRoundedRect(px - 3, py - 3, pW + 6, pH + 6, 16);
-        panel.lineStyle(1.5, 0x2EC4B6, 0.45);
-        panel.strokeRoundedRect(px, py, pW, pH, 14);
-        panel.lineStyle(1, 0x7FE0DE, 0.10);
-        panel.strokeRoundedRect(px + 4, py + 4, pW - 8, pH - 8, 12);
+        panel.fillStyle(0x0a0a1a, 0.98);
+        panel.fillRoundedRect(px, py, pW, pH, 12);
+        panel.lineStyle(6, 0x2EC4B6, 0.05);
+        panel.strokeRoundedRect(px - 3, py - 3, pW + 6, pH + 6, 14);
+        panel.lineStyle(1.5, 0x2EC4B6, 0.38);
+        panel.strokeRoundedRect(px, py, pW, pH, 12);
+        panel.lineStyle(1, 0x7FE0DE, 0.09);
+        panel.strokeRoundedRect(px + 4, py + 4, pW - 8, pH - 8, 10);
         this.mainGroup.add(panel);
+
+        const frame = this.scene.add.graphics();
+        frame.lineStyle(1, 0x14202f, 0.9);
+        frame.lineBetween(px + 16, py + 68, px + pW - 16, py + 68);
+        frame.lineStyle(1, 0x2EC4B6, 0.12);
+        frame.lineBetween(px + 16, py + pH - 34, px + pW - 16, py + pH - 34);
+        frame.fillStyle(0x2EC4B6, 0.8);
+        frame.fillRect(px + 16, py + 20, 4, 28);
+        frame.fillStyle(0xFF87A0, 0.75);
+        frame.fillRect(px + pW - 20, py + 20, 4, 28);
+        this.mainGroup.add(frame);
 
         this.mainTitle = this.scene.add.text(cx, py + 32, this._t('pauseTitle', 'PAUSED'), {
             fontSize: '28px',
@@ -110,12 +121,19 @@ class PauseMenu {
         }).setOrigin(0.5);
         this.mainGroup.add(this.mainTitle);
 
+        this.mainSubtitle = this.scene.add.text(cx, py + 52, this._t('helpNav', 'UP/DOWN Navigate | J Confirm | K Cancel'), {
+            fontSize: '11px',
+            fontFamily: 'monospace',
+            color: '#5a6786',
+        }).setOrigin(0.5);
+        this.mainGroup.add(this.mainSubtitle);
+
         const deco = this.scene.add.graphics();
-        deco.lineStyle(1, 0x2EC4B6, 0.2);
-        deco.lineBetween(cx - 84, py + 56, cx - 18, py + 56);
-        deco.lineBetween(cx + 18, py + 56, cx + 84, py + 56);
+        deco.lineStyle(1, 0x2EC4B6, 0.18);
+        deco.lineBetween(cx - 92, py + 72, cx - 18, py + 72);
+        deco.lineBetween(cx + 18, py + 72, cx + 92, py + 72);
         deco.fillStyle(0xFF87A0, 0.65);
-        deco.fillRect(cx - 2, py + 54, 4, 4);
+        deco.fillRect(cx - 2, py + 70, 4, 4);
         this.mainGroup.add(deco);
 
         this.mainGlow = this.scene.add.graphics();
@@ -126,8 +144,8 @@ class PauseMenu {
         this.mainItemCarets = [];
         this.mainItemYs = [];
 
-        const startY = py + 92;
-        const gap = 42;
+        const startY = py + 96;
+        const gap = 38;
         const itemX = cx - 92;
 
         this.mainItemDefs.forEach((def, i) => {
@@ -204,13 +222,26 @@ class PauseMenu {
         this.settingsOverlay.add(dim);
 
         const panel = this.scene.add.graphics();
-        panel.fillStyle(0x0a0a1a, 0.97);
+        panel.fillStyle(0x0a0a1a, 0.98);
         panel.fillRoundedRect(px, py, pW, pH, 12);
+        panel.lineStyle(6, 0x2EC4B6, 0.05);
+        panel.strokeRoundedRect(px - 3, py - 3, pW + 6, pH + 6, 14);
         panel.lineStyle(1.5, 0x2EC4B6, 0.34);
         panel.strokeRoundedRect(px, py, pW, pH, 12);
         panel.lineStyle(1, 0x7FE0DE, 0.08);
         panel.strokeRoundedRect(px + 4, py + 4, pW - 8, pH - 8, 10);
         this.settingsOverlay.add(panel);
+
+        const frame = this.scene.add.graphics();
+        frame.lineStyle(1, 0x14202f, 1);
+        frame.lineBetween(px + 18, py + 60, px + pW - 18, py + 60);
+        frame.lineStyle(1, 0x2EC4B6, 0.12);
+        frame.lineBetween(px + 18, py + pH - 30, px + pW - 18, py + pH - 30);
+        frame.fillStyle(0x2EC4B6, 0.75);
+        frame.fillRect(px + 18, py + 18, 4, 24);
+        frame.fillStyle(0xFF87A0, 0.75);
+        frame.fillRect(px + pW - 22, py + 18, 4, 24);
+        this.settingsOverlay.add(frame);
 
         this.settingsTitle = this.scene.add.text(cx, py + 24, this._t('settings', 'SETTINGS'), {
             fontSize: '22px',
@@ -218,6 +249,13 @@ class PauseMenu {
             color: '#7FE0DE',
         }).setOrigin(0.5);
         this.settingsOverlay.add(this.settingsTitle);
+
+        this.settingsSubtitle = this.scene.add.text(cx, py + 42, this._t('helpMenuSettings', 'UP/DOWN Navigate | J Select | K Back'), {
+            fontSize: '11px',
+            fontFamily: 'monospace',
+            color: '#5a6786',
+        }).setOrigin(0.5);
+        this.settingsOverlay.add(this.settingsSubtitle);
 
         this.settingsGlow = this.scene.add.graphics();
         this.settingsOverlay.add(this.settingsGlow);
@@ -235,7 +273,7 @@ class PauseMenu {
         const sliderX = px + 142;
         const sliderW = 128;
         const sliderH = 6;
-        const rowY = [py + 82, py + 128, py + 174, py + 226, py + 270, py + 314];
+        const rowY = [py + 86, py + 130, py + 174, py + 224, py + 266, py + 308];
 
         this.settingsItems = [];
         this.settingsValueTexts = [];
@@ -1054,12 +1092,18 @@ class PauseMenu {
 
     _refreshLocalizedText() {
         this.mainTitle.setText(this._t('pauseTitle', 'PAUSED'));
+        if (this.mainSubtitle) {
+            this.mainSubtitle.setText(this._t('helpNav', 'UP/DOWN Navigate | J Confirm | K Cancel'));
+        }
         this.mainItemDefs.forEach((def, i) => {
             const item = this.mainItems[i];
             if (item) item.text.setText(this._t(def.labelKey));
         });
         this.settingsTitle.setText(this._t('settings', 'SETTINGS'));
         this.settingsHelp.setText(this._t('helpMenuSettings', 'UP/DOWN Navigate | J Select | K Back'));
+        if (this.settingsSubtitle) {
+            this.settingsSubtitle.setText(this._t('helpMenuSettings', 'UP/DOWN Navigate | J Select | K Back'));
+        }
         this.confirmTitle.setText(this._t('returnToMenuQ', 'RETURN TO MENU?'));
         if (this.confirmTexts && this.confirmTexts.length >= 2) {
             this.confirmTexts[0].setText(this._t('cancel', 'CANCEL'));
@@ -1068,6 +1112,10 @@ class PauseMenu {
         this._updateMainHelpText();
         this._updateSettingsVisuals();
         this._updateSettingsSelection();
+    }
+
+    _updateMainLabels() {
+        this._refreshLocalizedText();
     }
 
     _openSavePicker() {
