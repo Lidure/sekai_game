@@ -341,7 +341,7 @@ class MenuScene extends Phaser.Scene {
         });
 
         // Version number
-        this.versionText = this.add.text(this.scale.width - 26, this.scale.height - 17, 'v0.5.0', {
+        this.versionText = this.add.text(this.scale.width - 26, this.scale.height - 17, 'v0.5.2', {
             fontSize: '12px',
             fontFamily: 'monospace',
             color: '#3a4a7a',
